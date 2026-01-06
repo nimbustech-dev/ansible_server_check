@@ -1086,12 +1086,14 @@
             
             // results 객체의 모든 항목 표시
             for (const [key, value] of Object.entries(results)) {
-                if (value === null || value === undefined) continue;
-                
                 let displayValue = '';
                 let isError = false;
                 
-                if (typeof value === 'object') {
+                // N/A 값도 표시하되 오류로 강조
+                if (value === null || value === undefined || value === 'N/A' || value === '') {
+                    displayValue = 'N/A (값 없음)';
+                    isError = true;
+                } else if (typeof value === 'object') {
                     displayValue = JSON.stringify(value, null, 2);
                     // 에러 메시지나 실패 상태 확인
                     if (JSON.stringify(value).toLowerCase().includes('error') || 
@@ -1101,7 +1103,8 @@
                 } else {
                     displayValue = String(value);
                     if (displayValue.toLowerCase().includes('error') || 
-                        displayValue.toLowerCase().includes('fail')) {
+                        displayValue.toLowerCase().includes('fail') ||
+                        displayValue === 'N/A') {
                         isError = true;
                     }
                 }

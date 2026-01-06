@@ -883,10 +883,16 @@
             
             results.forEach((row, index) => {
                 const status = String(row.status || '').toLowerCase();
-                const isError = status.includes('error') || status.includes('x');
+                const results = row.results || {};
+                // 오류 판단: error, x 포함, 또는 N/A 값이 있는 경우
+                const hasNA = !row.id || !row.hostname || !row.check_time ||
+                             !results.tomcat_active || results.tomcat_active === 'N/A' ||
+                             !results.cpu_usage || results.cpu_usage === 'N/A' ||
+                             !results.mem_free_mb || results.mem_free_mb === 'N/A' ||
+                             !results.disk_usage || results.disk_usage === 'N/A';
+                const isError = status.includes('error') || status.includes('x') || hasNA;
                 const rowClass = isError ? 'error-row' : '';
                 
-                const results = row.results || {};
                 html += `<tr class="${rowClass}" ${isError ? `onclick="showErrorDetails(${index})"` : ''} data-row-index="${index}">`;
                 html += `<td>${row.id || 'N/A'}</td>`;
                 html += `<td>${row.hostname || 'N/A'}</td>`;
@@ -1007,12 +1013,14 @@
             
             // results 객체의 모든 항목 표시
             for (const [key, value] of Object.entries(results)) {
-                if (value === null || value === undefined) continue;
-                
                 let displayValue = '';
                 let isError = false;
                 
-                if (typeof value === 'object') {
+                // N/A 값도 표시하되 오류로 강조
+                if (value === null || value === undefined || value === 'N/A' || value === '') {
+                    displayValue = 'N/A (값 없음)';
+                    isError = true;
+                } else if (typeof value === 'object') {
                     displayValue = JSON.stringify(value, null, 2);
                     if (JSON.stringify(value).toLowerCase().includes('error') || 
                         JSON.stringify(value).toLowerCase().includes('fail')) {
@@ -1021,7 +1029,8 @@
                 } else {
                     displayValue = String(value);
                     if (displayValue.toLowerCase().includes('error') || 
-                        displayValue.toLowerCase().includes('fail')) {
+                        displayValue.toLowerCase().includes('fail') ||
+                        displayValue === 'N/A') {
                         isError = true;
                     }
                 }
