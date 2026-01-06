@@ -1,0 +1,87 @@
+========================================
+Tomcat 자동 점검 보고서
+========================================
+
+[1] 설치 확인
+----------------------------------------
+설치 상태: {{ tomcat_installation.stdout | default('N/A') }}
+실행 파일: {{ tomcat_binary_path.stdout | default('N/A') }}
+CATALINA_HOME: {{ tomcat_catalina_home.stdout | default('N/A') }}
+CATALINA_BASE: {{ tomcat_catalina_base.stdout | default('N/A') }}
+
+[2] 디렉토리 구조
+----------------------------------------
+{{ dir_tree.stdout | default('Directory structure not found') }}
+
+[3] 파일시스템 사용률
+----------------------------------------
+CATALINA_HOME: {{ catalina_home_fs.stdout | default('N/A') }}
+CATALINA_BASE: {{ catalina_base_fs.stdout | default('N/A') }}
+Logs: {{ logs_fs.stdout | default('N/A') }}
+Temp: {{ temp_fs.stdout | default('N/A') }}
+
+[4] Tomcat 서비스 상태
+----------------------------------------
+ActiveState: {{ tomcat_service.status.ActiveState | default('N/A') }}
+SubState: {{ tomcat_service.status.SubState | default('N/A') }}
+
+[5] Tomcat 리스너 포트
+----------------------------------------
+HTTP (8080): {{ tomcat_listener_8080.stdout | default('N/A') }}
+Shutdown (8005): {{ tomcat_listener_8005.stdout | default('N/A') }}
+AJP (8009): {{ tomcat_listener_8009.stdout | default('N/A') }}
+
+[6] OS 메모리 사용률
+----------------------------------------
+{{ mem_usage.stdout | default('N/A') }}
+사용률: {{ mem_usage_percent.stdout | default('N/A') }}
+
+[7] OS CPU 사용률
+----------------------------------------
+{{ cpu_usage.stdout | default('N/A') }}
+사용률: {{ cpu_usage_percent.stdout | default('N/A') }}
+
+[8] OS 프로세스 개수
+----------------------------------------
+{{ process_count.stdout | default('N/A') }}
+
+[9] 배포된 애플리케이션
+----------------------------------------
+애플리케이션 목록:
+{{ deployed_apps.stdout | default('No applications found') }}
+
+애플리케이션 개수: {{ app_count.stdout | default('N/A') }}
+
+[10] Tomcat 설정
+----------------------------------------
+server.xml: {{ server_xml_check.stdout | default('N/A') }}
+JAVA_OPTS: {{ java_opts.stdout | default('N/A') }}
+Max Heap: {{ max_heap.stdout | default('N/A') }}
+
+[11] 로그 파일
+----------------------------------------
+catalina.out: {{ catalina_log_check.stdout | default('N/A') }}
+Error Log: {{ error_log_check.stdout | default('N/A') }}
+금일 접속 로그 에러(Non-200) 카운트: {{ access_log_error_count.stdout | default('N/A') }}
+
+[12] Tomcat 프로세스
+----------------------------------------
+실행 상태: {{ 'YES' if tomcat_proc.stdout != '' else 'NO' }}
+프로세스 정보: {{ tomcat_proc.stdout | default('N/A') }}
+
+[13] 기동 스크립트
+----------------------------------------
+startup.sh 수정일자: {{ script_date.stdout | default('N/A') }}
+
+[14] CPU 상위 프로세스 (Top 5)
+----------------------------------------
+{{ cpu_top_processes.stdout | default('N/A') }}
+
+[15] 메모리 상위 프로세스 (Top 5)
+----------------------------------------
+{{ mem_top_processes.stdout | default('N/A') }}
+
+========================================
+점검 완료
+========================================
+
