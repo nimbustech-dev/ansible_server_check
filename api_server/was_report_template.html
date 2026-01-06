@@ -296,6 +296,147 @@
             background-color: #edf2f7;
         }
         
+        tbody tr.error-row {
+            cursor: pointer;
+        }
+        
+        tbody tr.error-row:hover {
+            background-color: #fed7d7;
+            box-shadow: 0 2px 4px rgba(245, 101, 101, 0.2);
+        }
+        
+        /* 모달 스타일 */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+        
+        .modal-overlay.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            position: relative;
+            animation: modalSlideIn 0.3s ease;
+        }
+        
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        
+        .modal-header h2 {
+            color: #2d3748;
+            font-size: 24px;
+            margin: 0;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 28px;
+            color: #a0aec0;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        
+        .modal-close:hover {
+            background: #edf2f7;
+            color: #2d3748;
+        }
+        
+        .modal-body {
+            color: #4a5568;
+        }
+        
+        .detail-section {
+            margin-bottom: 25px;
+        }
+        
+        .detail-section h3 {
+            color: #2d3748;
+            font-size: 18px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .detail-item {
+            margin-bottom: 12px;
+            padding: 12px;
+            background: #f7fafc;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .detail-item-label {
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+        
+        .detail-item-value {
+            color: #4a5568;
+            font-size: 14px;
+            word-break: break-word;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            background: white;
+            padding: 8px;
+            border-radius: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .error-highlight {
+            background: #fed7d7;
+            border-left-color: #f56565;
+        }
+        
+        .success-highlight {
+            background: #c6f6d5;
+            border-left-color: #48bb78;
+        }
+        
         td {
             padding: 12px;
             border-right: 1px solid #e2e8f0;
@@ -471,6 +612,19 @@
         </div>
     </div>
     
+    <!-- 오류 상세 정보 모달 -->
+    <div class="modal-overlay" id="errorModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🔍 점검 상세 정보</h2>
+                <button class="modal-close" onclick="closeErrorModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- 상세 정보가 여기에 표시됩니다 -->
+            </div>
+        </div>
+    </div>
+    
     <script>
         let allData = [];
         let statusChart = null;
@@ -576,6 +730,7 @@
                 return true;
             });
             
+            currentFilteredData = filtered;
             renderTable(filtered);
             updateHeaderInfo(filtered.length);
             updateStats(filtered);
@@ -726,9 +881,13 @@
             html += '<th>생성 시간</th>';
             html += '</tr></thead><tbody>';
             
-            results.forEach(row => {
+            results.forEach((row, index) => {
+                const status = String(row.status || '').toLowerCase();
+                const isError = status.includes('error') || status.includes('x');
+                const rowClass = isError ? 'error-row' : '';
+                
                 const results = row.results || {};
-                html += '<tr>';
+                html += `<tr class="${rowClass}" ${isError ? `onclick="showErrorDetails(${index})"` : ''} data-row-index="${index}">`;
                 html += `<td>${row.id || 'N/A'}</td>`;
                 html += `<td>${row.hostname || 'N/A'}</td>`;
                 html += `<td>${formatDate(row.check_time)}</td>`;
@@ -815,6 +974,101 @@
                 setTimeout(connectWebSocket, 5000);
             };
         }
+        
+        // 오류 상세 정보 표시
+        let currentFilteredData = [];
+        
+        function showErrorDetails(index) {
+            const rowData = currentFilteredData[index];
+            if (!rowData) return;
+            
+            displayErrorDetails(rowData);
+        }
+        
+        function displayErrorDetails(data) {
+            const modalBody = document.getElementById('modalBody');
+            const results = data.results || {};
+            
+            let html = '';
+            
+            // 기본 정보
+            html += '<div class="detail-section">';
+            html += '<h3>📋 기본 정보</h3>';
+            html += `<div class="detail-item"><div class="detail-item-label">점검 유형</div><div class="detail-item-value">WAS</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">호스트명</div><div class="detail-item-value">${data.hostname || 'N/A'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">점검 시간</div><div class="detail-item-value">${data.check_time || 'N/A'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">담당자</div><div class="detail-item-value">${data.checker || 'N/A'}</div></div>`;
+            html += `<div class="detail-item ${data.status && data.status.toLowerCase().includes('error') ? 'error-highlight' : 'success-highlight'}"><div class="detail-item-label">상태</div><div class="detail-item-value">${data.status || 'N/A'}</div></div>`;
+            html += '</div>';
+            
+            // 점검 결과 상세
+            html += '<div class="detail-section">';
+            html += '<h3>🔍 점검 결과 상세</h3>';
+            
+            // results 객체의 모든 항목 표시
+            for (const [key, value] of Object.entries(results)) {
+                if (value === null || value === undefined) continue;
+                
+                let displayValue = '';
+                let isError = false;
+                
+                if (typeof value === 'object') {
+                    displayValue = JSON.stringify(value, null, 2);
+                    if (JSON.stringify(value).toLowerCase().includes('error') || 
+                        JSON.stringify(value).toLowerCase().includes('fail')) {
+                        isError = true;
+                    }
+                } else {
+                    displayValue = String(value);
+                    if (displayValue.toLowerCase().includes('error') || 
+                        displayValue.toLowerCase().includes('fail')) {
+                        isError = true;
+                    }
+                }
+                
+                const itemClass = isError ? 'error-highlight' : '';
+                html += `<div class="detail-item ${itemClass}">`;
+                html += `<div class="detail-item-label">${key}</div>`;
+                html += `<div class="detail-item-value">${escapeHtml(displayValue)}</div>`;
+                html += '</div>';
+            }
+            
+            html += '</div>';
+            
+            // 원본 데이터 (디버깅용)
+            html += '<div class="detail-section">';
+            html += '<h3>📄 원본 데이터 (JSON)</h3>';
+            html += `<div class="detail-item"><div class="detail-item-value" style="max-height: 300px;">${escapeHtml(JSON.stringify(data, null, 2))}</div></div>`;
+            html += '</div>';
+            
+            modalBody.innerHTML = html;
+            document.getElementById('errorModal').classList.add('active');
+        }
+        
+        function closeErrorModal() {
+            document.getElementById('errorModal').classList.remove('active');
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // 모달 외부 클릭 시 닫기
+        document.addEventListener('click', (e) => {
+            const modal = document.getElementById('errorModal');
+            if (e.target === modal) {
+                closeErrorModal();
+            }
+        });
+        
+        // ESC 키로 모달 닫기
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeErrorModal();
+            }
+        });
         
         // 초기화
         document.addEventListener('DOMContentLoaded', () => {
