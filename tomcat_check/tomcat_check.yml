@@ -1,0 +1,77 @@
+---
+- name: Tomcat 통합 자동 점검
+  hosts: tomcat
+  become: yes
+  gather_facts: yes
+  
+  # API 설정 파일 로드 (파일이 없어도 기본값 사용)
+  pre_tasks:
+    - name: Load API config if exists
+      include_vars:
+        file: ../config/api_config.yml
+      failed_when: false
+      ignore_errors: yes
+  
+  vars:
+    # config 파일이 없을 경우 기본값
+    api_server:
+      url: "{{ api_server.url | default('http://192.168.0.18:8000/api/checks') }}"
+      timeout: "{{ api_server.timeout | default(30) }}"
+      retry_count: "{{ api_server.retry_count | default(3) }}"
+
+  roles:
+    - tomcat_check
+
+  # role 실행 후 API 전송
+  post_tasks:
+    - name: Include API sender tasks
+      include_tasks: "{{ playbook_dir }}/../common/roles/api_sender/tasks/main.yml"
+      vars:
+        check_type: "tomcat"
+        checker_name: "성태환"
+        check_results:
+          installation:
+            installed: "{{ tomcat_installation.stdout | default('N/A') }}"
+            binary_path: "{{ tomcat_binary_path.stdout | default('N/A') }}"
+            catalina_home: "{{ tomcat_catalina_home.stdout | default('N/A') }}"
+            catalina_base: "{{ tomcat_catalina_base.stdout | default('N/A') }}"
+          directory_structure: "{{ dir_tree.stdout | default('N/A') }}"
+          filesystem_usage:
+            catalina_home: "{{ catalina_home_fs.stdout | default('N/A') }}"
+            catalina_base: "{{ catalina_base_fs.stdout | default('N/A') }}"
+            logs: "{{ logs_fs.stdout | default('N/A') }}"
+            temp: "{{ temp_fs.stdout | default('N/A') }}"
+          service_status:
+            active: "{{ tomcat_service.status.ActiveState | default('N/A') }}"
+            substate: "{{ tomcat_service.status.SubState | default('N/A') }}"
+          listener:
+            port_8080: "{{ tomcat_listener_8080.stdout | default('N/A') }}"
+            port_8005: "{{ tomcat_listener_8005.stdout | default('N/A') }}"
+            port_8009: "{{ tomcat_listener_8009.stdout | default('N/A') }}"
+          os_resources:
+            memory:
+              detail: "{{ mem_usage.stdout | default('N/A') }}"
+              usage_percent: "{{ mem_usage_percent.stdout | default('N/A') }}"
+            cpu:
+              detail: "{{ cpu_usage.stdout | default('N/A') }}"
+              usage_percent: "{{ cpu_usage_percent.stdout | default('N/A') }}"
+            process_count: "{{ process_count.stdout | default('N/A') }}"
+            cpu_top_processes: "{{ cpu_top_processes.stdout | default('N/A') }}"
+            mem_top_processes: "{{ mem_top_processes.stdout | default('N/A') }}"
+          applications:
+            deployed_apps: "{{ deployed_apps.stdout | default('N/A') }}"
+            app_count: "{{ app_count.stdout | default('N/A') }}"
+          configuration:
+            server_xml: "{{ server_xml_check.stdout | default('N/A') }}"
+            java_opts: "{{ java_opts.stdout | default('N/A') }}"
+            max_heap: "{{ max_heap.stdout | default('N/A') }}"
+          logs:
+            catalina_log: "{{ catalina_log_check.stdout | default('N/A') }}"
+            error_log: "{{ error_log_check.stdout | default('N/A') }}"
+            access_log_error_count: "{{ access_log_error_count.stdout | default('N/A') }}"
+          process:
+            running: "{{ 'YES' if tomcat_proc.stdout != '' else 'NO' }}"
+            details: "{{ tomcat_proc.stdout | default('N/A') }}"
+          script:
+            startup_script_date: "{{ script_date.stdout | default('N/A') }}"
+

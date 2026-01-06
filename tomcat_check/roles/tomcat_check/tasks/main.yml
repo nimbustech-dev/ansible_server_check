@@ -1,0 +1,382 @@
+---
+################################
+# 1. Tomcat 설치 확인 및 경로 점검
+################################
+# 1-1. Tomcat 설치 확인
+- name: Check Tomcat installation
+  shell: |
+    if command -v catalina.sh &> /dev/null || [ -d /usr/share/tomcat* ] || [ -d /opt/tomcat* ] || [ -d /var/lib/tomcat* ]; then
+      echo "INSTALLED"
+    else
+      echo "NOT_INSTALLED"
+    fi
+  register: tomcat_installation
+  changed_when: false
+  failed_when: false
+
+# 1-2. Tomcat 실행 파일 경로 확인
+- name: Get Tomcat binary path
+  shell: |
+    which catalina.sh || find /usr -name catalina.sh 2>/dev/null | head -1 || find /opt -name catalina.sh 2>/dev/null | head -1 || echo "N/A"
+  register: tomcat_binary_path
+  changed_when: false
+  failed_when: false
+
+# 1-3. CATALINA_HOME 확인
+- name: Get CATALINA_HOME
+  shell: |
+    if [ -n "$CATALINA_HOME" ]; then
+      echo "$CATALINA_HOME"
+    else
+      CATALINA_SCRIPT=$(which catalina.sh 2>/dev/null || find /usr -name catalina.sh 2>/dev/null | head -1 || find /opt -name catalina.sh 2>/dev/null | head -1)
+      if [ -n "$CATALINA_SCRIPT" ]; then
+        dirname $(dirname "$CATALINA_SCRIPT")
+      else
+        find /usr -type d -name "tomcat*" 2>/dev/null | head -1 || find /opt -type d -name "tomcat*" 2>/dev/null | head -1 || echo "/usr/share/tomcat"
+      fi
+    fi
+  register: tomcat_catalina_home
+  changed_when: false
+  failed_when: false
+
+# 1-4. CATALINA_BASE 확인
+- name: Get CATALINA_BASE
+  shell: |
+    if [ -n "$CATALINA_BASE" ]; then
+      echo "$CATALINA_BASE"
+    else
+      CATALINA_SCRIPT=$(which catalina.sh 2>/dev/null || find /usr -name catalina.sh 2>/dev/null | head -1 || find /opt -name catalina.sh 2>/dev/null | head -1)
+      if [ -n "$CATALINA_SCRIPT" ]; then
+        CATALINA_HOME=$(dirname $(dirname "$CATALINA_SCRIPT"))
+        if [ -d "$CATALINA_HOME" ]; then
+          echo "$CATALINA_HOME"
+        else
+          echo "/var/lib/tomcat"
+        fi
+      else
+        echo "/var/lib/tomcat"
+      fi
+    fi
+  register: tomcat_catalina_base
+  changed_when: false
+  failed_when: false
+
+################################
+# 2. 디렉토리 구조 점검
+################################
+- name: Check Tomcat directory structure
+  shell: |
+    CATALINA_HOME="{{ tomcat_catalina_home.stdout | default('/usr/share/tomcat') }}"
+    if [ -d "$CATALINA_HOME" ]; then
+      find "$CATALINA_HOME" -maxdepth 2 -type d | sort
+    else
+      echo "CATALINA_HOME directory not found: $CATALINA_HOME"
+    fi
+  register: dir_tree
+  changed_when: false
+  failed_when: false
+
+################################
+# 3. 파일시스템 사용률 점검
+################################
+# 3-1. CATALINA_HOME 파일시스템
+- name: Check CATALINA_HOME filesystem usage
+  shell: |
+    CATALINA_HOME="{{ tomcat_catalina_home.stdout | default('/usr/share/tomcat') }}"
+    if [ -d "$CATALINA_HOME" ]; then
+      df -h "$CATALINA_HOME" | tail -1
+    else
+      echo "CATALINA_HOME not found: $CATALINA_HOME"
+    fi
+  register: catalina_home_fs
+  changed_when: false
+  failed_when: false
+
+# 3-2. CATALINA_BASE 파일시스템
+- name: Check CATALINA_BASE filesystem usage
+  shell: |
+    CATALINA_BASE="{{ tomcat_catalina_base.stdout | default('/var/lib/tomcat') }}"
+    if [ -d "$CATALINA_BASE" ]; then
+      df -h "$CATALINA_BASE" | tail -1
+    else
+      echo "CATALINA_BASE not found: $CATALINA_BASE"
+    fi
+  register: catalina_base_fs
+  changed_when: false
+  failed_when: false
+
+# 3-3. 로그 디렉토리 파일시스템
+- name: Check logs directory filesystem usage
+  shell: |
+    CATALINA_BASE="{{ tomcat_catalina_base.stdout | default('/var/lib/tomcat') }}"
+    LOGS_DIR="$CATALINA_BASE/logs"
+    if [ -d "$LOGS_DIR" ]; then
+      df -h "$LOGS_DIR" | tail -1
+    else
+      echo "Logs directory not found: $LOGS_DIR"
+    fi
+  register: logs_fs
+  changed_when: false
+  failed_when: false
+
+# 3-4. 임시 디렉토리 파일시스템
+- name: Check temp directory filesystem usage
+  shell: |
+    CATALINA_BASE="{{ tomcat_catalina_base.stdout | default('/var/lib/tomcat') }}"
+    TEMP_DIR="$CATALINA_BASE/temp"
+    if [ -d "$TEMP_DIR" ]; then
+      df -h "$TEMP_DIR" | tail -1
+    else
+      echo "Temp directory not found: $TEMP_DIR"
+    fi
+  register: temp_fs
+  changed_when: false
+  failed_when: false
+
+################################
+# 4. Tomcat 프로세스 및 서비스 상태
+################################
+# 4-1. Tomcat 프로세스 기동 확인
+- name: Check Tomcat process
+  shell: ps -ef | grep java | grep tomcat | grep -v grep
+  register: tomcat_proc
+  changed_when: false
+  failed_when: false
+
+# 4-2. Tomcat 서비스 상태
+- name: Check Tomcat service status
+  systemd:
+    name: tomcat
+  register: tomcat_service
+  ignore_errors: yes
+  failed_when: false
+
+################################
+# 5. Tomcat 리스너 점검
+################################
+# 5-1. HTTP 포트 (8080)
+- name: Check Tomcat HTTP listener (8080)
+  shell: ss -lntp | grep 8080 || echo "8080 NOT LISTENING"
+  register: tomcat_listener_8080
+  changed_when: false
+  failed_when: false
+
+# 5-2. Shutdown 포트 (8005)
+- name: Check Tomcat shutdown listener (8005)
+  shell: ss -lntp | grep 8005 || echo "8005 NOT LISTENING"
+  register: tomcat_listener_8005
+  changed_when: false
+  failed_when: false
+
+# 5-3. AJP 포트 (8009)
+- name: Check Tomcat AJP listener (8009)
+  shell: ss -lntp | grep 8009 || echo "8009 NOT LISTENING"
+  register: tomcat_listener_8009
+  changed_when: false
+  failed_when: false
+
+################################
+# 6. OS 리소스 점검
+################################
+# 6-1. 물리적 메모리 사용률 (상세 정보)
+- name: Check memory usage
+  shell: free -h
+  register: mem_usage
+  changed_when: false
+
+# 6-2. 물리적 메모리 사용률 (퍼센트)
+- name: Calculate memory usage percentage
+  shell: |
+    MEM_INFO=$(free | grep Mem)
+    TOTAL=$(echo $MEM_INFO | awk '{print $2}')
+    USED=$(echo $MEM_INFO | awk '{print $3}')
+    PERCENT=$(awk "BEGIN {printf \"%.2f\", ($USED/$TOTAL)*100}")
+    echo "${PERCENT}%"
+  register: mem_usage_percent
+  changed_when: false
+  failed_when: false
+
+# 6-3. 물리적 CPU 사용률 (상세 정보)
+- name: Check CPU usage
+  shell: top -b -n1 | head -5
+  register: cpu_usage
+  changed_when: false
+
+# 6-4. 물리적 CPU 사용률 (퍼센트)
+- name: Get CPU usage percentage
+  shell: |
+    top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1"%"}'
+  register: cpu_usage_percent
+  changed_when: false
+  failed_when: false
+
+# 6-5. 프로세스 개수
+- name: Check OS process count
+  shell: ps -ef | wc -l
+  register: process_count
+  changed_when: false
+
+################################
+# 7. 배포된 애플리케이션 점검
+################################
+# 7-1. 배포된 애플리케이션 목록
+- name: Get deployed applications
+  shell: |
+    CATALINA_BASE="{{ tomcat_catalina_base.stdout | default('/var/lib/tomcat') }}"
+    WEBAPPS_DIR="$CATALINA_BASE/webapps"
+    if [ -d "$WEBAPPS_DIR" ]; then
+      ls -1 "$WEBAPPS_DIR" | grep -v "^ROOT$" | grep -v "^manager$" | grep -v "^host-manager$" || echo "No applications deployed"
+    else
+      echo "Webapps directory not found: $WEBAPPS_DIR"
+    fi
+  register: deployed_apps
+  changed_when: false
+  failed_when: false
+
+# 7-2. 배포된 애플리케이션 개수
+- name: Get application count
+  shell: |
+    CATALINA_BASE="{{ tomcat_catalina_base.stdout | default('/var/lib/tomcat') }}"
+    WEBAPPS_DIR="$CATALINA_BASE/webapps"
+    if [ -d "$WEBAPPS_DIR" ]; then
+      ls -1 "$WEBAPPS_DIR" | grep -v "^ROOT$" | grep -v "^manager$" | grep -v "^host-manager$" | wc -l
+    else
+      echo "0"
+    fi
+  register: app_count
+  changed_when: false
+  failed_when: false
+
+################################
+# 8. Tomcat 설정 점검
+################################
+# 8-1. server.xml 파일 존재 확인
+- name: Check server.xml
+  shell: |
+    CATALINA_BASE="{{ tomcat_catalina_base.stdout | default('/var/lib/tomcat') }}"
+    SERVER_XML="$CATALINA_BASE/conf/server.xml"
+    if [ -f "$SERVER_XML" ]; then
+      echo "EXISTS: $SERVER_XML"
+      ls -lh "$SERVER_XML"
+    else
+      echo "NOT_FOUND: $SERVER_XML"
+    fi
+  register: server_xml_check
+  changed_when: false
+  failed_when: false
+
+# 8-2. JAVA_OPTS 확인
+- name: Get JAVA_OPTS
+  shell: |
+    ps aux | grep -i tomcat | grep -v grep | grep -oP 'JAVA_OPTS=\K[^ ]+' || echo "N/A"
+  register: java_opts
+  changed_when: false
+  failed_when: false
+
+# 8-3. 최대 힙 메모리 확인
+- name: Get max heap memory
+  shell: |
+    ps aux | grep -i tomcat | grep -v grep | grep -oP 'Xmx\K[0-9]+[mMgG]' || echo "N/A"
+  register: max_heap
+  changed_when: false
+  failed_when: false
+
+################################
+# 9. 로그 파일 점검
+################################
+# 9-1. catalina.out 로그 확인
+- name: Check catalina.out log
+  shell: |
+    CATALINA_BASE="{{ tomcat_catalina_base.stdout | default('/var/lib/tomcat') }}"
+    CATALINA_LOG="$CATALINA_BASE/logs/catalina.out"
+    if [ -f "$CATALINA_LOG" ]; then
+      echo "EXISTS: $CATALINA_LOG"
+      ls -lh "$CATALINA_LOG"
+      echo "Last 5 lines:"
+      tail -5 "$CATALINA_LOG"
+    else
+      echo "NOT_FOUND: $CATALINA_LOG"
+    fi
+  register: catalina_log_check
+  changed_when: false
+  failed_when: false
+
+# 9-2. 에러 로그 확인
+- name: Check error log
+  shell: |
+    CATALINA_BASE="{{ tomcat_catalina_base.stdout | default('/var/lib/tomcat') }}"
+    ERROR_LOG="$CATALINA_BASE/logs/catalina.$(date +%Y-%m-%d).log"
+    if [ ! -f "$ERROR_LOG" ]; then
+      ERROR_LOG=$(ls -t "$CATALINA_BASE/logs/catalina.*.log" 2>/dev/null | head -1)
+    fi
+    if [ -f "$ERROR_LOG" ]; then
+      echo "EXISTS: $ERROR_LOG"
+      ls -lh "$ERROR_LOG"
+      ERROR_COUNT=$(grep -i "error\|exception" "$ERROR_LOG" | wc -l)
+      echo "Error/Exception count: $ERROR_COUNT"
+    else
+      echo "NOT_FOUND: No error log found"
+    fi
+  register: error_log_check
+  changed_when: false
+  failed_when: false
+
+# 9-3. 금일 접속 로그 에러(Non-200) 카운트
+- name: Count today's access log errors (Non-200)
+  shell: |
+    CATALINA_BASE="{{ tomcat_catalina_base.stdout | default('/var/lib/tomcat') }}"
+    ACCESS_LOG="$CATALINA_BASE/logs/localhost_access_log.$(date +%Y-%m-%d).txt"
+    if [ -f "$ACCESS_LOG" ]; then
+      grep '[^200]' "$ACCESS_LOG" | wc -l
+    else
+      echo "0 (access log not found: $ACCESS_LOG)"
+    fi
+  register: access_log_error_count
+  changed_when: false
+  failed_when: false
+
+# 9-4. 기동 스크립트 수정일자 확인
+- name: Check startup script modification date
+  shell: |
+    CATALINA_HOME="{{ tomcat_catalina_home.stdout | default('/usr/share/tomcat') }}"
+    STARTUP_SCRIPT="$CATALINA_HOME/bin/startup.sh"
+    if [ -f "$STARTUP_SCRIPT" ]; then
+      if command -v stat &> /dev/null; then
+        stat -c "%y" "$STARTUP_SCRIPT"
+      else
+        ls -l "$STARTUP_SCRIPT" | awk '{print $6, $7, $8}'
+      fi
+    else
+      echo "NOT_FOUND: $STARTUP_SCRIPT"
+    fi
+  register: script_date
+  changed_when: false
+  failed_when: false
+
+################################
+# 10. CPU/메모리 상위 프로세스 점검
+################################
+# 10-1. CPU 사용률 상위 프로세스 (상위 5개)
+- name: Get top CPU processes
+  shell: |
+    ps aux --sort=-%cpu | head -6 | tail -5 | awk '{printf "%-10s %6s%% %s\n", $11, $3, $12}'
+  register: cpu_top_processes
+  changed_when: false
+  failed_when: false
+
+# 10-2. 메모리 사용률 상위 프로세스 (상위 5개)
+- name: Get top memory processes
+  shell: |
+    ps aux --sort=-%mem | head -6 | tail -5 | awk '{printf "%-10s %6s%% %s\n", $11, $4, $12}'
+  register: mem_top_processes
+  changed_when: false
+  failed_when: false
+
+################################
+# 11. 보고서 생성
+################################
+- name: Generate Tomcat check report
+  template:
+    src: report.j2
+    dest: /tmp/tomcat_check_report.txt
+
