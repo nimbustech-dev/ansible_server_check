@@ -731,7 +731,35 @@
             if (value === null || value === undefined || value === 'N/A' || value === '') {
                 return '<span style="color: #a0aec0;">N/A</span>';
             }
-            
+
+            // 객체 형태(OS 전용 구조) 예쁘게 표시
+            if (typeof value === 'object') {
+                if (columnName === 'cpu') {
+                    const model = value.model || value.cpu_model || '';
+                    const usage = value.usage_percent || value.usage || '';
+                    let text = model;
+                    if (usage) {
+                        text = text ? `${text} / ${usage}` : usage;
+                    }
+                    const str = text || JSON.stringify(value);
+                    return str.length > 100 ? str.substring(0, 100) + '...' : str;
+                }
+
+                if (columnName === 'ntp') {
+                    const status = value.status || value.ntp || '';
+                    const str = status || JSON.stringify(value);
+                    return str.length > 100 ? str.substring(0, 100) + '...' : str;
+                }
+
+                if (columnName === 'log') {
+                    const str = value.message || JSON.stringify(value);
+                    return str.length > 100 ? str.substring(0, 100) + '...' : str;
+                }
+
+                const str = JSON.stringify(value);
+                return str.length > 100 ? str.substring(0, 100) + '...' : str;
+            }
+
             if (columnName === 'cpu' || columnName === 'log') {
                 const str = String(value);
                 if (str.length > 100) {
@@ -739,7 +767,7 @@
                 }
                 return str;
             }
-            
+
             return String(value);
         }
         
