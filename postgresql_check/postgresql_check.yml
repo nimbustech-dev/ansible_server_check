@@ -1,0 +1,73 @@
+---
+- name: PostgreSQL 통합 자동 점검
+  hosts: postgresql
+  become: yes
+  gather_facts: yes
+  
+  # API 설정 파일 로드 (파일이 없어도 기본값 사용)
+  pre_tasks:
+    - name: Load API config if exists
+      include_vars:
+        file: ../config/api_config.yml
+      failed_when: false
+      ignore_errors: yes
+  
+  vars:
+    # config 파일이 없을 경우 기본값
+    api_server:
+      url: "{{ api_server.url | default('http://192.168.0.18:8000/api/checks') }}"
+      timeout: "{{ api_server.timeout | default(30) }}"
+      retry_count: "{{ api_server.retry_count | default(3) }}"
+
+  roles:
+    - postgresql_check
+
+  # role 실행 후 API 전송
+  post_tasks:
+    - name: Include API sender tasks
+      include_tasks: "{{ playbook_dir }}/../common/roles/api_sender/tasks/main.yml"
+      vars:
+        check_type: "postgresql"
+        checker_name: "성태환"
+        check_results:
+          installation:
+            installed: "{{ pg_installation.stdout | default('N/A') }}"
+            binary_path: "{{ pg_binary_path.stdout | default('N/A') }}"
+            base_directory: "{{ pg_base_dir.stdout | default('N/A') }}"
+          filesystem_usage:
+            db_engine: "{{ db_engine_fs.stdout | default('N/A') }}"
+            archive_log: "{{ archive_log_fs.stdout | default('N/A') }}"
+            system_log: "{{ system_log_fs.stdout | default('N/A') }}"
+            usage_over_70: "{{ fs_usage.stdout | default('N/A') }}"
+          service_status:
+            active: "{{ pg_service.status.ActiveState | default('N/A') }}"
+            substate: "{{ pg_service.status.SubState | default('N/A') }}"
+            loaded: "{{ pg_service.status.LoadState | default('N/A') }}"
+          listener:
+            port_5432: "{{ pg_listener.stdout | default('N/A') }}"
+          db_connection:
+            status: "{{ db_connection_status.stdout | default('N/A') }}"
+            active_sessions: "{{ pg_sessions.stdout | default('N/A') }}"
+          os_resources:
+            memory:
+              detail: "{{ mem_usage.stdout | default('N/A') }}"
+              usage_percent: "{{ mem_usage_percent.stdout | default('N/A') }}"
+            cpu:
+              detail: "{{ cpu_usage.stdout | default('N/A') }}"
+              usage_percent: "{{ cpu_usage_percent.stdout | default('N/A') }}"
+            process_count: "{{ process_count.stdout | default('N/A') }}"
+            cpu_top_processes: "{{ cpu_top_processes.stdout | default('N/A') }}"
+            mem_top_processes: "{{ mem_top_processes.stdout | default('N/A') }}"
+          database:
+            db_list: "{{ db_list.stdout | default('N/A') }}"
+            db_count: "{{ db_count.stdout | default('N/A') }}"
+          db_parameters:
+            shared_buffers: "{{ shared_buffers.stdout | default('N/A') }}"
+            max_connections: "{{ max_connections.stdout | default('N/A') }}"
+          tablespace:
+            usage: "{{ tablespace.stdout | default('N/A') }}"
+          wal:
+            archive_mode: "{{ archive_mode.stdout | default('N/A') }}"
+            online_backup_possible: "{{ online_backup_possible.stdout | default('N/A') }}"
+            wal_size: "{{ wal_size.stdout | default('N/A') }}"
+

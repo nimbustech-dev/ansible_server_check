@@ -1,0 +1,23 @@
+---
+- name: "[DB] MariaDB 건강검진"
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: "1. MariaDB 서비스 기동 상태"
+      shell: "systemctl status mariadb"
+      register: mariadb_status
+      failed_when: "'active (running)' not in mariadb_status.stdout"
+      ignore_errors: yes
+
+    - name: "2. DB 리스너 포트(3306) 점검"
+      shell: "ss -lntp | grep 3306"
+      register: db_port
+      failed_when: db_port.stdout == ""
+      ignore_errors: yes
+
+    - name: "3. InnoDB 버퍼풀 설정 확인"
+      shell: "mysql -u root -p0124 -e \"show global variables like 'innodb_buffer_pool_size';\""
+      register: db_config
+      failed_when: "'innodb_buffer_pool_size' not in db_config.stdout"
+      ignore_errors: yes
+

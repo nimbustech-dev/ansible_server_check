@@ -1,0 +1,10 @@
+# API 서버 설정
+# 모든 팀원이 공유하는 설정 파일
+api_server:
+  url: "http://localhost:8000/api/checks"  # API 서버 주소 (api_server 디렉토리에서 서버 실행 필요)
+  timeout: 60  # 동시 점검 시 타임아웃 증가
+  retry_count: 5  # 동시 점검 시 재시도 횟수 증가
+
+# 기본 담당자 정보 (각 팀원이 자신의 정보로 수정 가능)
+default_checker: "unknown"
+

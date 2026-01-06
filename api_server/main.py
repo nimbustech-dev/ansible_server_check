@@ -1,0 +1,810 @@
+"""
+Ansible 점검 결과 수집 API 서버
+FastAPI 기반으로 점검 결과를 받아서 DB에 저장
+"""
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+from contextlib import asynccontextmanager
+import uvicorn
+import json
+import asyncio
+from database import init_db, save_check_result, get_check_results
+from models import CheckResult
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 서버 시작 시
+    init_db()
+    print("✅ 데이터베이스 초기화 완료")
+    yield
+    # 서버 종료 시 (필요한 경우 정리 작업)
+
+app = FastAPI(
+    title="Ansible 점검 결과 수집 API",
+    description="OS/WAS/DB 점검 결과를 수집하고 저장하는 API 서버",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# WebSocket 연결 관리
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except:
+                pass
+
+manager = ConnectionManager()
+
+# CORS 설정 (필요시 프론트엔드에서 접근 가능하도록)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 프로덕션에서는 특정 도메인만 허용
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class CheckResultRequest(BaseModel):
+    """점검 결과 요청 모델"""
+    check_type: str  # "os", "was", "mariadb", "postgresql", "cubrid" 등
+    hostname: str
+    check_time: str
+    checker: str
+    status: str  # "success", "warning", "error"
+    results: Dict[str, Any]
+
+
+
+
+@app.get("/")
+async def root():
+    """루트 엔드포인트"""
+    return {
+        "message": "Ansible 점검 결과 수집 API 서버",
+        "version": "1.0.0",
+        "endpoints": {
+            "POST /api/checks": "점검 결과 저장",
+            "GET /api/checks": "점검 결과 조회",
+            "GET /api/health": "서버 상태 확인",
+            "GET /api/db-checks/report": "DB 점검 결과 리포트 (HTML)",
+            "GET /api/os-checks/report": "OS 점검 결과 리포트 - 강하나 (HTML)",
+            "GET /api/was-checks/report": "WAS 점검 결과 리포트 - 이수민 (HTML)"
+        }
+    }
+
+
+@app.get("/api/health")
+async def health_check():
+    """서버 상태 확인"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+@app.post("/api/checks")
+async def create_check_result(check_result: CheckResultRequest):
+    """
+    점검 결과를 받아서 DB에 저장
+    
+    Args:
+        check_result: 점검 결과 데이터
+        
+    Returns:
+        저장된 결과 정보
+    """
+    try:
+        # DB에 저장
+        result_id = save_check_result(
+            check_type=check_result.check_type,
+            hostname=check_result.hostname,
+            check_time=check_result.check_time,
+            checker=check_result.checker,
+            status=check_result.status,
+            results=check_result.results
+        )
+        
+        # WebSocket으로 실시간 업데이트 브로드캐스트
+        try:
+            await manager.broadcast({
+                "type": "new_check_result",
+                "check_type": check_result.check_type,
+                "hostname": check_result.hostname,
+                "checker": check_result.checker,
+                "status": check_result.status,
+                "timestamp": datetime.now().isoformat()
+            })
+        except:
+            pass  # WebSocket 브로드캐스트 실패해도 저장은 성공
+        
+        return {
+            "success": True,
+            "message": "점검 결과가 성공적으로 저장되었습니다",
+            "id": result_id,
+            "check_type": check_result.check_type,
+            "hostname": check_result.hostname,
+            "check_time": check_result.check_time
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"점검 결과 저장 중 오류 발생: {str(e)}"
+        )
+
+
+@app.get("/api/checks")
+async def list_check_results(
+    check_type: Optional[str] = None,
+    hostname: Optional[str] = None,
+    checker: Optional[str] = None,
+    limit: int = 100
+):
+    """
+    저장된 점검 결과 조회
+    
+    Args:
+        check_type: 점검 유형 필터
+        hostname: 호스트명 필터
+        checker: 담당자 필터
+        limit: 최대 조회 개수
+        
+    Returns:
+        점검 결과 목록
+    """
+    try:
+        results = get_check_results(
+            check_type=check_type,
+            hostname=hostname,
+            checker=checker,
+            limit=limit
+        )
+        return {
+            "success": True,
+            "count": len(results),
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"점검 결과 조회 중 오류 발생: {str(e)}"
+        )
+
+
+def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    """DB 점검 결과를 표 형식으로 정리"""
+    check_type = result.get("check_type", "")
+    results = result.get("results", {})
+    formatted = {
+        "id": result.get("id"),
+        "점검유형": check_type.upper(),
+        "호스트명": result.get("hostname", "N/A"),
+        "점검시간": result.get("check_time", "N/A"),
+        "담당자": result.get("checker", "N/A"),
+        "상태": result.get("status", "N/A"),
+    }
+    
+    if check_type == "mariadb":
+        # MariaDB 점검 결과 정리
+        installation = results.get("installation", {})
+        service_status = results.get("service_status", {})
+        listener = results.get("listener", "N/A")
+        os_resources = results.get("os_resources", {})
+        db_internal = results.get("db_internal", {})
+        database = results.get("database", {})
+        directory_structure = results.get("directory_structure", "N/A")
+        filesystem_usage = results.get("filesystem_usage", "N/A")
+        
+        # 메모리 정보 파싱 (안전하게)
+        memory_total = "N/A"
+        memory_used = "N/A"
+        memory_available = "N/A"
+        try:
+            mem_data = os_resources.get("memory", "")
+            if isinstance(mem_data, dict):
+                mem_str = mem_data.get("detail", "")
+            else:
+                mem_str = str(mem_data)
+            if isinstance(mem_str, str) and "\n" in mem_str:
+                lines = mem_str.split("\n")
+                if len(lines) > 1:
+                    parts = lines[1].split()
+                    if len(parts) >= 2:
+                        memory_total = parts[1]
+                        memory_used = parts[2] if len(parts) > 2 else "N/A"
+                        memory_available = parts[6] if len(parts) > 6 else "N/A"
+        except:
+            pass
+        
+        # CPU 정보 파싱
+        cpu_info = "N/A"
+        try:
+            cpu_data = os_resources.get("cpu", "")
+            if isinstance(cpu_data, dict):
+                cpu_str = cpu_data.get("detail", "")
+            else:
+                cpu_str = str(cpu_data)
+            if isinstance(cpu_str, str):
+                if "%Cpu" in cpu_str:
+                    cpu_info = cpu_str.split("%Cpu")[1].strip()[:50] if "%Cpu" in cpu_str else "N/A"
+        except:
+            pass
+        
+        # InnoDB 버퍼풀 파싱
+        innodb_bp = "N/A"
+        try:
+            bp_str = db_internal.get("innodb_buffer_pool", "")
+            if isinstance(bp_str, str) and "\t" in bp_str:
+                innodb_bp = bp_str.split("\t")[1].strip()
+        except:
+            pass
+        
+        # 바이너리 로그 파싱
+        log_bin_status = "OFF"
+        try:
+            log_bin_str = db_internal.get("log_bin", "")
+            if "ON" in str(log_bin_str):
+                log_bin_status = "ON"
+        except:
+            pass
+        
+        # 테이블스페이스 요약
+        tablespace_summary = "N/A"
+        try:
+            ts_str = db_internal.get("tablespace", "")
+            if isinstance(ts_str, str):
+                lines = ts_str.split("\n")
+                if len(lines) > 0:
+                    tablespace_summary = f"{len(lines)}개 DB" + (f" | {lines[0][:30]}..." if lines[0] else "")
+        except:
+            pass
+        
+        # 설치 확인 파싱
+        installation_status = "✗"
+        installation_path = "N/A"
+        try:
+            installed_str = str(installation.get("installed", "")).strip()
+            # 첫 줄만 확인 (여러 줄이 있을 수 있음)
+            if "\n" in installed_str:
+                installed_str = installed_str.split("\n")[0]
+            if installed_str.upper() == "INSTALLED":
+                installation_status = "✓"
+            installation_path = installation.get("base_directory", installation.get("binary_path", "N/A"))
+        except:
+            pass
+        
+        # 데이터베이스 정보 파싱
+        db_list = database.get("db_list", "N/A")
+        db_count = database.get("db_count", "N/A")
+        # 빈 문자열이나 공백만 있는 경우 처리
+        if isinstance(db_list, str):
+            db_list_stripped = db_list.strip()
+            if db_list_stripped and db_list_stripped != "N/A":
+                db_list_display = db_list_stripped[:50] + "..." if len(db_list_stripped) > 50 else db_list_stripped
+            else:
+                db_list_display = "없음"  # 빈 문자열이면 "없음"으로 표시
+        else:
+            db_list_display = "N/A"
+        
+        # CPU/메모리 상위 프로세스 파싱
+        cpu_top = "N/A"
+        mem_top = "N/A"
+        try:
+            cpu_top_str = os_resources.get("cpu_top_processes", "")
+            mem_top_str = os_resources.get("mem_top_processes", "")
+            if isinstance(cpu_top_str, str) and cpu_top_str.strip() and cpu_top_str != "N/A":
+                cpu_top = "있음"
+            if isinstance(mem_top_str, str) and mem_top_str.strip() and mem_top_str != "N/A":
+                mem_top = "있음"
+        except:
+            pass
+        
+        formatted.update({
+            "설치확인": installation_status,
+            "설치경로": str(installation_path)[:40],
+            "디렉토리구조": "있음" if "not present" not in str(directory_structure).lower() else "없음",
+            "파일시스템": "있음" if "not found" not in str(filesystem_usage).lower() else "없음",
+            "서비스상태": f"{service_status.get('active', 'N/A')}/{service_status.get('substate', 'N/A')}",
+            "리스너(3306)": "LISTENING" if "LISTEN" in str(listener) else "NOT LISTENING",
+            "메모리(Total)": memory_total,
+            "메모리(Used)": memory_used,
+            "메모리(Available)": memory_available,
+            "CPU사용률": cpu_info,
+            "프로세스수": os_resources.get("process_count", "N/A"),
+            "InnoDB버퍼풀": innodb_bp,
+            "바이너리로그": log_bin_status,
+            "테이블스페이스": tablespace_summary,
+            "데이터베이스수": str(db_count).strip() if str(db_count).strip() != "0" else "0 (사용자 DB 없음)",
+            "데이터베이스목록": db_list_display,
+            "CPU상위프로세스": cpu_top,
+            "메모리상위프로세스": mem_top,
+        })
+    
+    elif check_type == "postgresql":
+        # PostgreSQL 점검 결과 정리
+        installation = results.get("installation", {})
+        service_status = results.get("service_status", {})
+        listener = results.get("listener", {})
+        db_parameters = results.get("db_parameters", {})
+        tablespace = results.get("tablespace", {})
+        wal = results.get("wal", {})
+        filesystem_usage = results.get("filesystem_usage", {})
+        db_connection = results.get("db_connection", {})
+        os_resources = results.get("os_resources", {})
+        database = results.get("database", {})
+        
+        # 파일시스템 사용률 파싱
+        fs_usage = "정상"
+        try:
+            fs_str = filesystem_usage.get("usage_over_70", "")
+            if fs_str and fs_str.strip() and fs_str != "N/A":
+                fs_usage = "70% 초과 있음"
+        except:
+            pass
+        
+        # DB엔진 파일시스템 파싱
+        db_engine_fs = "N/A"
+        try:
+            db_engine_str = filesystem_usage.get("db_engine", "")
+            if isinstance(db_engine_str, str) and db_engine_str != "N/A":
+                # 사용률 추출 (예: "34%")
+                db_engine_fs = db_engine_str.split()[-2] if len(db_engine_str.split()) >= 5 else "N/A"
+        except:
+            pass
+        
+        # 리스너 파싱
+        listener_status = "NOT LISTENING"
+        listener_detail = ""
+        try:
+            listener_str = str(listener.get("port_5432", ""))
+            if "LISTEN" in listener_str:
+                listener_status = "LISTENING"
+                # IP 주소 추출
+                if "127.0.0.1" in listener_str:
+                    listener_detail = "localhost"
+                elif "0.0.0.0" in listener_str:
+                    listener_detail = "all"
+        except:
+            pass
+        
+        # DB 접속 상태 파싱
+        db_conn_status = "N/A"
+        session_count = "N/A"
+        try:
+            db_conn_status = db_connection.get("status", "N/A")
+            session_str = db_connection.get("active_sessions", "")
+            if isinstance(session_str, str):
+                session_count = str(session_str.count("\n") - 1) if "\n" in session_str else "1"
+        except:
+            pass
+        
+        # 메모리 정보 파싱
+        memory_info = "N/A"
+        memory_percent = "N/A"
+        try:
+            mem_detail = os_resources.get("memory", {})
+            if isinstance(mem_detail, dict):
+                mem_str = mem_detail.get("detail", "")
+                memory_percent = mem_detail.get("usage_percent", "N/A")
+                if isinstance(mem_str, str) and "\n" in mem_str:
+                    lines = mem_str.split("\n")
+                    if len(lines) > 1:
+                        parts = lines[1].split()
+                        if len(parts) >= 2:
+                            memory_info = f"{parts[1]} / {parts[2]}"
+            elif isinstance(mem_detail, str):
+                # 이전 형식 호환
+                if "\n" in mem_detail:
+                    lines = mem_detail.split("\n")
+                    if len(lines) > 1:
+                        parts = lines[1].split()
+                        if len(parts) >= 2:
+                            memory_info = f"{parts[1]} / {parts[2]}"
+        except:
+            pass
+        
+        # CPU 정보 파싱
+        cpu_info = "N/A"
+        cpu_percent = "N/A"
+        try:
+            cpu_detail = os_resources.get("cpu", {})
+            if isinstance(cpu_detail, dict):
+                cpu_str = cpu_detail.get("detail", "")
+                cpu_percent = cpu_detail.get("usage_percent", "N/A")
+                cpu_info = cpu_str[:50] if isinstance(cpu_str, str) else "N/A"
+            elif isinstance(cpu_detail, str):
+                cpu_info = cpu_detail[:50]
+        except:
+            pass
+        
+        # WAL 크기 파싱
+        wal_size = "N/A"
+        try:
+            wal_str = wal.get("wal_size", "")
+            if isinstance(wal_str, str) and wal_str != "N/A":
+                wal_size = wal_str.strip()
+        except:
+            pass
+        
+        # 테이블스페이스 요약
+        tablespace_summary = "N/A"
+        try:
+            ts_str = tablespace.get("usage", "")
+            if isinstance(ts_str, str) and ts_str != "N/A":
+                lines = ts_str.split("\n")
+                if len(lines) > 0:
+                    tablespace_summary = f"{len(lines)}개" + (f" | {lines[0][:30]}..." if lines[0] else "")
+        except:
+            pass
+        
+        # 설치 확인 파싱
+        installation_status = "✗"
+        installation_path = "N/A"
+        try:
+            installed_str = str(installation.get("installed", "")).strip()
+            # 첫 줄만 확인 (여러 줄이 있을 수 있음)
+            if "\n" in installed_str:
+                installed_str = installed_str.split("\n")[0]
+            if installed_str.upper() == "INSTALLED":
+                installation_status = "✓"
+            installation_path = installation.get("base_directory", installation.get("binary_path", "N/A"))
+        except:
+            pass
+        
+        # 데이터베이스 정보 파싱
+        db_list = database.get("db_list", "N/A")
+        db_count = database.get("db_count", "N/A")
+        # 빈 문자열이나 공백만 있는 경우 처리
+        if isinstance(db_list, str):
+            db_list_stripped = db_list.strip()
+            if db_list_stripped and db_list_stripped != "N/A":
+                db_list_display = db_list_stripped[:50] + "..." if len(db_list_stripped) > 50 else db_list_stripped
+            else:
+                db_list_display = "없음"  # 빈 문자열이면 "없음"으로 표시
+        else:
+            db_list_display = "N/A"
+        
+        # CPU/메모리 상위 프로세스 파싱
+        cpu_top = "N/A"
+        mem_top = "N/A"
+        try:
+            cpu_top_str = os_resources.get("cpu_top_processes", "")
+            mem_top_str = os_resources.get("mem_top_processes", "")
+            if isinstance(cpu_top_str, str) and cpu_top_str.strip() and cpu_top_str != "N/A":
+                cpu_top = "있음"
+            if isinstance(mem_top_str, str) and mem_top_str.strip() and mem_top_str != "N/A":
+                mem_top = "있음"
+        except:
+            pass
+        
+        formatted.update({
+            "설치확인": installation_status,
+            "설치경로": str(installation_path)[:40],
+            "DB엔진파일시스템": db_engine_fs,
+            "아카이브로그파일시스템": filesystem_usage.get("archive_log", "N/A")[:50],
+            "시스템로그파일시스템": filesystem_usage.get("system_log", "N/A")[:50],
+            "파일시스템(70%초과)": fs_usage,
+            "서비스상태": f"{service_status.get('active', 'N/A')}/{service_status.get('substate', 'N/A')}",
+            "리스너(5432)": f"{listener_status} ({listener_detail})",
+            "DB접속상태": db_conn_status,
+            "활성세션수": session_count,
+            "메모리": memory_info,
+            "메모리사용률": memory_percent,
+            "CPU": cpu_info,
+            "CPU사용률": cpu_percent,
+            "프로세스수": os_resources.get("process_count", "N/A"),
+            "공유버퍼": str(db_parameters.get("shared_buffers", "N/A")).strip(),
+            "최대연결수": str(db_parameters.get("max_connections", "N/A")).strip(),
+            "테이블스페이스": tablespace_summary,
+            "아카이브모드": str(wal.get("archive_mode", "N/A")).strip(),
+            "온라인백업가능": wal.get("online_backup_possible", "N/A")[:50],
+            "WAL크기": wal_size,
+            "데이터베이스수": str(db_count).strip() if str(db_count).strip() != "0" else "0 (사용자 DB 없음)",
+            "데이터베이스목록": db_list_display,
+            "CPU상위프로세스": cpu_top,
+            "메모리상위프로세스": mem_top,
+        })
+    
+    elif check_type == "cubrid":
+        # CUBRID 점검 결과 정리
+        installation = results.get("installation", {})
+        service_status = results.get("service_status", {})
+        processes = results.get("processes", {})
+        database = results.get("database", {})
+        os_resources = results.get("os_resources", {})
+        tablespace = results.get("tablespace", {})
+        filesystem = results.get("filesystem", {})
+        ha = results.get("ha", {})
+        
+        # CUBRID 서비스 상태 확인
+        service_state = "STOPPED"
+        server_state = "STOPPED"
+        broker_state = "STOPPED"
+        try:
+            service_str = str(service_status.get("service", "")).strip()
+            server_str = str(service_status.get("server", "")).strip()
+            broker_str = str(service_status.get("broker", "")).strip()
+            
+            # 서비스 상태 파싱
+            if not service_str or service_str == "":
+                service_state = "STOPPED"
+            elif "error" in service_str.lower() or "failed" in service_str.lower():
+                service_state = "ERROR"
+            elif "running" in service_str.lower() and "not running" not in service_str.lower():
+                service_state = "RUNNING"
+            elif "not running" in service_str.lower() or "stopped" in service_str.lower():
+                service_state = "STOPPED"
+            else:
+                # 알 수 없는 상태는 간단히 표시
+                if "unknown" in service_str.lower():
+                    service_state = "UNKNOWN"
+                else:
+                    service_state = "STOPPED"
+            
+            # 서버 상태 파싱
+            if not server_str or server_str == "":
+                server_state = "STOPPED"
+            elif "error" in server_str.lower() or "failed" in server_str.lower():
+                server_state = "ERROR"
+            elif "running" in server_str.lower() and "not running" not in server_str.lower():
+                server_state = "RUNNING"
+            elif "not running" in server_str.lower() or "stopped" in server_str.lower():
+                server_state = "STOPPED"
+            else:
+                if "unknown" in server_str.lower():
+                    server_state = "UNKNOWN"
+                else:
+                    server_state = "STOPPED"
+            
+            # 브로커 상태 파싱
+            if not broker_str or broker_str == "":
+                broker_state = "STOPPED"
+            elif "error" in broker_str.lower() or "failed" in broker_str.lower():
+                broker_state = "ERROR"
+            elif "running" in broker_str.lower() or "active" in broker_str.lower():
+                if "not running" not in broker_str.lower():
+                    broker_state = "RUNNING"
+                else:
+                    broker_state = "STOPPED"
+            elif "not running" in broker_str.lower() or "stopped" in broker_str.lower():
+                broker_state = "STOPPED"
+            else:
+                if "unknown" in broker_str.lower():
+                    broker_state = "UNKNOWN"
+                else:
+                    broker_state = "STOPPED"
+        except:
+            pass
+        
+        # 데이터베이스 목록 파싱
+        db_list = database.get("db_list", "N/A")
+        db_count = "0"
+        try:
+            if isinstance(db_list, str) and db_list != "N/A":
+                db_count = str(len(db_list.split()))
+        except:
+            pass
+        
+        # CPU/메모리 사용률 상위 프로세스
+        cpu_top = "N/A"
+        mem_top = "N/A"
+        try:
+            cpu_str = os_resources.get("cpu_usage_top", "")
+            mem_str = os_resources.get("mem_usage_top", "")
+            if isinstance(cpu_str, str) and cpu_str.strip():
+                cpu_top = "있음"
+            if isinstance(mem_str, str) and mem_str.strip():
+                mem_top = "있음"
+        except:
+            pass
+        
+        # 테이블스페이스 정보
+        tablespace_info = "N/A"
+        try:
+            ts_str = tablespace.get("spacedb_info", "")
+            if isinstance(ts_str, str) and ts_str.strip():
+                tablespace_info = "있음"
+        except:
+            pass
+        
+        # 파일시스템 정보
+        ncia_fs = "없음"
+        try:
+            fs_str = filesystem.get("ncia_usage", "")
+            if isinstance(fs_str, str) and fs_str.strip():
+                ncia_fs = "있음"
+        except:
+            pass
+        
+        # HA 상태
+        ha_status = "미구성"
+        try:
+            ha_str = ha.get("ha_status", "")
+            if isinstance(ha_str, str) and ha_str.strip():
+                ha_status = "구성됨"
+        except:
+            pass
+        
+        formatted.update({
+            "설치확인": "✓" if installation.get("home_exists") and installation.get("bin_exists") else "✗",
+            "설치경로": str(installation.get("cubrid_home", "N/A"))[:40],
+            "서비스상태": service_state,
+            "서버상태": server_state,
+            "브로커상태": broker_state,
+            "브로커개수": processes.get("broker_count", "N/A"),
+            "프로세스수": processes.get("total_proc_count", "N/A"),
+            "관리프로세스": "있음" if processes.get("admin_proc") else "없음",
+            "데이터베이스수": db_count,
+            "데이터베이스목록": str(db_list)[:50],
+            "CPU상위프로세스": cpu_top,
+            "메모리상위프로세스": mem_top,
+            "테이블스페이스": tablespace_info,
+            "NCIA파일시스템": ncia_fs,
+            "HA상태": ha_status,
+        })
+    
+    return formatted
+
+
+@app.get("/api/db-checks/report", response_class=HTMLResponse)
+async def db_checks_report():
+    """
+    DB 점검 결과를 HTML 테이블 형식으로 표시 (필터링, 정렬, 페이지네이션, 차트, 실시간 업데이트 포함)
+    
+    Returns:
+        HTML 형식의 리포트
+    """
+    try:
+        # HTML 템플릿 파일 읽기
+        import os
+        template_path = os.path.join(os.path.dirname(__file__), "report_template.html")
+        with open(template_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        
+        return HTMLResponse(content=html)
+        
+    except Exception as e:
+        error_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>오류</title>
+        </head>
+        <body>
+            <h1>오류 발생</h1>
+            <p>{str(e)}</p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=error_html, status_code=500)
+
+
+@app.get("/api/os-checks/report", response_class=HTMLResponse)
+async def os_checks_report():
+    """
+    OS 점검 결과 리포트 - 강하나 담당자용
+    
+    Returns:
+        HTML 형식의 리포트
+    """
+    try:
+        import os
+        template_path = os.path.join(os.path.dirname(__file__), "os_report_template.html")
+        with open(template_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        
+        return HTMLResponse(content=html)
+        
+    except Exception as e:
+        error_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>오류</title>
+        </head>
+        <body>
+            <h1>오류 발생</h1>
+            <p>{str(e)}</p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=error_html, status_code=500)
+
+
+@app.get("/api/was-checks/report", response_class=HTMLResponse)
+async def was_checks_report():
+    """
+    WAS 점검 결과 리포트 - 이수민 담당자용
+    
+    Returns:
+        HTML 형식의 리포트
+    """
+    try:
+        import os
+        template_path = os.path.join(os.path.dirname(__file__), "was_report_template.html")
+        with open(template_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        
+        return HTMLResponse(content=html)
+        
+    except Exception as e:
+        error_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>오류</title>
+        </head>
+        <body>
+            <h1>오류 발생</h1>
+            <p>{str(e)}</p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=error_html, status_code=500)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket 엔드포인트 - 실시간 업데이트"""
+    await manager.connect(websocket)
+    try:
+        while True:
+            # 클라이언트로부터 메시지 수신 (ping/pong)
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_json({"type": "pong", "timestamp": datetime.now().isoformat()})
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+
+@app.get("/api/db-checks/data")
+async def get_db_checks_data(limit: int = 100):
+    """DB 점검 결과를 JSON 형식으로 반환 (차트/필터링용)"""
+    try:
+        db_types = ["mariadb", "postgresql", "cubrid"]
+        all_results = []
+        
+        for db_type in db_types:
+            results = get_check_results(check_type=db_type, limit=limit)
+            all_results.extend(results)
+        
+        all_results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        formatted_results = [format_db_result(result) for result in all_results[:limit]]
+        
+        return {
+            "success": True,
+            "count": len(formatted_results),
+            "results": formatted_results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+if __name__ == "__main__":
+    # 개발 서버 실행
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True  # 개발 모드: 코드 변경 시 자동 재시작
+    )
+

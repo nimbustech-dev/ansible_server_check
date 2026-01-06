@@ -1,0 +1,13 @@
+---
+# API 전송 공통 role 기본 변수
+# 각 팀원이 자신의 플레이북에서 이 변수들을 override해서 사용
+
+# 필수 변수 (각 팀원이 설정해야 함)
+check_type: "unknown"  # "os", "was", "mariadb", "postgresql", "cubrid" 등
+check_results: {}      # 점검 결과 데이터 (딕셔너리 형태)
+
+# 선택 변수
+checker_name: "{{ default_checker | default('unknown') }}"
+# API 서버 URL (기본값: http://192.168.0.18:8000/api/checks)
+api_server_url: "{{ api_server_url | default(api_server.url | default('http://192.168.0.18:8000/api/checks')) }}"
+

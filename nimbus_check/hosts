@@ -1,0 +1,2 @@
+[my_server]
+192.168.56.101 ansible_user=taehwan

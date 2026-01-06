@@ -1,0 +1,293 @@
+---
+################################
+# 1. 사전 디렉토리 구조 점검
+################################
+- name: Check GCLOUD directory structure
+  shell: |
+    if [ -d /GCLOUD ]; then
+      find /GCLOUD -maxdepth 3 -type d
+    else
+      echo "/GCLOUD directory not present"
+    fi
+  register: dir_tree
+
+################################
+# 2. 파일시스템 사용률 점검
+################################
+# 2-1. DB엔진 파일시스템 (데이터 디렉토리)
+- name: Get MariaDB datadir
+  shell: mysql --connect-timeout=5 -NBe "SHOW VARIABLES LIKE 'datadir';" | awk '{print $2}'
+  register: mariadb_datadir
+  ignore_errors: yes
+  changed_when: false
+
+- name: Check DB engine filesystem usage (datadir)
+  shell: |
+    DATADIR="{{ mariadb_datadir.stdout | default('/var/lib/mysql') }}"
+    df -h "$DATADIR" | tail -1
+  register: db_engine_fs
+  failed_when: false
+  changed_when: false
+
+# 2-2. 아카이브(데이터변경) 로그 파일시스템 (바이너리 로그)
+- name: Get MariaDB log_bin_basename
+  shell: mysql --connect-timeout=5 -NBe "SHOW VARIABLES LIKE 'log_bin_basename';" | awk '{print $2}' || mysql --connect-timeout=5 -NBe "SHOW VARIABLES LIKE 'log_bin';" | awk '{if ($2=="ON") print "/var/lib/mysql"}'
+  register: mariadb_log_bin_path
+  ignore_errors: yes
+  changed_when: false
+
+- name: Check archive log filesystem usage (binary log)
+  shell: |
+    LOG_PATH="{{ mariadb_log_bin_path.stdout | default('/var/lib/mysql') }}"
+    if [ -d "$LOG_PATH" ]; then
+      df -h "$LOG_PATH" | tail -1
+    else
+      echo "Binary log path not found: $LOG_PATH"
+    fi
+  register: archive_log_fs
+  failed_when: false
+  changed_when: false
+
+# 2-3. DB 시스템 로그 파일시스템 (에러 로그, 슬로우 쿼리 로그)
+- name: Get MariaDB log_error path
+  shell: mysql --connect-timeout=5 -NBe "SHOW VARIABLES LIKE 'log_error';" | awk '{print $2}' || echo "/var/log/mysql/error.log"
+  register: mariadb_log_error_path
+  ignore_errors: yes
+  changed_when: false
+
+- name: Check system log filesystem usage
+  shell: |
+    LOG_ERROR="{{ mariadb_log_error_path.stdout | default('/var/log/mysql/error.log') }}"
+    LOG_DIR=$(dirname "$LOG_ERROR")
+    if [ -d "$LOG_DIR" ]; then
+      df -h "$LOG_DIR" | tail -1
+    else
+      echo "Log directory not found: $LOG_DIR"
+    fi
+  register: system_log_fs
+  failed_when: false
+  changed_when: false
+
+# 2-4. GCLOUD 파일시스템 (기존)
+- name: Check GCLOUD filesystem usage
+  shell: df -h | grep GCLOUD || echo "GCLOUD filesystem not found"
+  register: gcloud_df
+  failed_when: false
+  changed_when: false
+
+################################
+# 3. MariaDB 서비스 상태
+################################
+- name: Check MariaDB service status
+  systemd:
+    name: mariadb
+  register: mariadb_service
+
+################################
+# 4. MariaDB 리스너 점검
+################################
+- name: Check MariaDB listener (3306)
+  shell: ss -lntp | grep 3306 || echo "3306 NOT LISTENING"
+  register: mariadb_listener
+
+################################
+# 5. OS 리소스 점검
+################################
+# 5-1. 물리적 메모리 사용률 (상세 정보)
+- name: Check memory usage
+  shell: free -h
+  register: mem_usage
+  changed_when: false
+
+# 5-2. 물리적 메모리 사용률 (퍼센트)
+- name: Calculate memory usage percentage
+  shell: |
+    MEM_INFO=$(free | grep Mem)
+    TOTAL=$(echo $MEM_INFO | awk '{print $2}')
+    USED=$(echo $MEM_INFO | awk '{print $3}')
+    PERCENT=$(awk "BEGIN {printf \"%.2f\", ($USED/$TOTAL)*100}")
+    echo "${PERCENT}%"
+  register: mem_usage_percent
+  changed_when: false
+  failed_when: false
+
+# 5-3. 물리적 CPU 사용률 (상세 정보)
+- name: Check CPU usage
+  shell: top -b -n1 | head -5
+  register: cpu_usage
+  changed_when: false
+
+# 5-4. 물리적 CPU 사용률 (퍼센트)
+- name: Get CPU usage percentage
+  shell: |
+    top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1"%"}'
+  register: cpu_usage_percent
+  changed_when: false
+  failed_when: false
+
+# 5-5. 프로세스 개수
+- name: Check OS process count
+  shell: ps -ef | wc -l
+  register: process_count
+  changed_when: false
+
+################################
+# 6. MariaDB 내부 점검
+################################
+# 6-1. 공유메모리(SGA) 파라미터 - InnoDB Buffer Pool
+- name: Check InnoDB buffer pool size
+  shell: mysql --connect-timeout=5 -NBe "SHOW GLOBAL VARIABLES LIKE 'innodb_buffer_pool_size';"
+  register: innodb_bp
+  ignore_errors: yes
+  changed_when: false
+
+# 6-2. 바이너리 로그 상태 (온라인 백업 가능 여부 확인용)
+- name: Check binary log status
+  shell: mysql --connect-timeout=5 -NBe "SHOW GLOBAL VARIABLES LIKE 'log_bin';"
+  register: log_bin
+  ignore_errors: yes
+  changed_when: false
+
+# 6-3. 온라인 백업 가능 여부 확인
+- name: Check if online backup is possible
+  shell: |
+    LOG_BIN_STATUS=$(mysql --connect-timeout=5 -NBe "SHOW GLOBAL VARIABLES LIKE 'log_bin';" | awk '{print $2}')
+    if [ "$LOG_BIN_STATUS" = "ON" ]; then
+      echo "ONLINE_BACKUP_POSSIBLE"
+    else
+      echo "ONLINE_BACKUP_NOT_POSSIBLE (log_bin is OFF)"
+    fi
+  register: online_backup_possible
+  ignore_errors: yes
+  changed_when: false
+
+# 6-4. 트랜잭션 로그 사이즈 (바이너리 로그 파일 크기)
+- name: Get binary log files size
+  shell: |
+    LOG_BIN_STATUS=$(mysql --connect-timeout=5 -NBe "SHOW GLOBAL VARIABLES LIKE 'log_bin';" | awk '{print $2}')
+    if [ "$LOG_BIN_STATUS" = "ON" ]; then
+      LOG_BIN_BASE=$(mysql --connect-timeout=5 -NBe "SHOW VARIABLES LIKE 'log_bin_basename';" | awk '{print $2}')
+      if [ -z "$LOG_BIN_BASE" ] || [ "$LOG_BIN_BASE" = "NULL" ]; then
+        DATADIR=$(mysql --connect-timeout=5 -NBe "SHOW VARIABLES LIKE 'datadir';" | awk '{print $2}')
+        LOG_BIN_BASE="${DATADIR}/mysql-bin"
+      fi
+      LOG_DIR=$(dirname "$LOG_BIN_BASE")
+      LOG_PREFIX=$(basename "$LOG_BIN_BASE")
+      if [ -d "$LOG_DIR" ]; then
+        # 바이너리 로그 파일들의 총 크기 계산
+        TOTAL_SIZE=$(du -sb "$LOG_DIR"/${LOG_PREFIX}* 2>/dev/null | awk '{sum+=$1} END {print sum}')
+        if [ -n "$TOTAL_SIZE" ] && [ "$TOTAL_SIZE" -gt 0 ]; then
+          # 바이트를 읽기 쉬운 형식으로 변환
+          if [ "$TOTAL_SIZE" -lt 1024 ]; then
+            echo "${TOTAL_SIZE}B"
+          elif [ "$TOTAL_SIZE" -lt 1048576 ]; then
+            echo "$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE/1024}")KB"
+          elif [ "$TOTAL_SIZE" -lt 1073741824 ]; then
+            echo "$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE/1048576}")MB"
+          else
+            echo "$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE/1073741824}")GB"
+          fi
+        else
+          echo "0 (no binary log files)"
+        fi
+      else
+        echo "Binary log directory not found: $LOG_DIR"
+      fi
+    else
+      echo "Binary log is OFF"
+    fi
+  register: transaction_log_size
+  ignore_errors: yes
+  changed_when: false
+
+# 6-5. 테이블스페이스 사용률
+- name: Check tablespace usage
+  shell: |
+    mysql --connect-timeout=5 -NBe "
+    SELECT table_schema,
+           ROUND(SUM(data_length+index_length)/1024/1024,2) MB
+    FROM information_schema.tables
+    GROUP BY table_schema;"
+  register: tablespace
+  ignore_errors: yes
+  changed_when: false
+
+################################
+# 7. 설치 확인 및 경로 점검
+################################
+# 7-1. MariaDB 설치 확인
+- name: Check MariaDB installation
+  shell: |
+    if command -v mysql &> /dev/null; then
+      echo "INSTALLED"
+    else
+      echo "NOT_INSTALLED"
+    fi
+  register: mariadb_installation
+  changed_when: false
+  failed_when: false
+
+# 7-2. MariaDB 설치 경로 확인
+- name: Get MariaDB binary path
+  shell: |
+    which mysql || echo "N/A"
+  register: mariadb_binary_path
+  changed_when: false
+  failed_when: false
+
+# 7-3. MariaDB 데이터 디렉토리 경로 (설치 경로로 사용)
+- name: Get MariaDB base directory
+  shell: |
+    DATADIR=$(mysql --connect-timeout=5 -NBe "SHOW VARIABLES LIKE 'datadir';" 2>/dev/null | awk '{print $2}' || echo "/var/lib/mysql")
+    BASEDIR=$(dirname "$DATADIR")
+    echo "$BASEDIR"
+  register: mariadb_base_dir
+  ignore_errors: yes
+  changed_when: false
+
+################################
+# 8. 데이터베이스 정보 점검
+################################
+# 8-1. 데이터베이스 목록
+- name: Get database list
+  shell: |
+    mysql --connect-timeout=5 -NBe "SHOW DATABASES;" | grep -v -E '^(information_schema|performance_schema|mysql|sys)$' || echo ""
+  register: db_list
+  ignore_errors: yes
+  changed_when: false
+
+# 8-2. 데이터베이스 개수
+- name: Get database count
+  shell: |
+    mysql --connect-timeout=5 -NBe "SHOW DATABASES;" | grep -v -E '^(information_schema|performance_schema|mysql|sys)$' | wc -l
+  register: db_count
+  ignore_errors: yes
+  changed_when: false
+
+################################
+# 9. CPU/메모리 상위 프로세스 점검
+################################
+# 9-1. CPU 사용률 상위 프로세스 (상위 5개)
+- name: Get top CPU processes
+  shell: |
+    ps aux --sort=-%cpu | head -6 | tail -5 | awk '{printf "%-10s %6s%% %s\n", $11, $3, $12}'
+  register: cpu_top_processes
+  changed_when: false
+  failed_when: false
+
+# 9-2. 메모리 사용률 상위 프로세스 (상위 5개)
+- name: Get top memory processes
+  shell: |
+    ps aux --sort=-%mem | head -6 | tail -5 | awk '{printf "%-10s %6s%% %s\n", $11, $4, $12}'
+  register: mem_top_processes
+  changed_when: false
+  failed_when: false
+
+################################
+# 10. 보고서 생성
+################################
+- name: Generate MariaDB check report
+  template:
+    src: report.j2
+    dest: /tmp/mariadb_check_report.txt
+

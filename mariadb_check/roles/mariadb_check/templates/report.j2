@@ -1,0 +1,49 @@
+========================================
+MariaDB 자동 점검 보고서
+========================================
+
+[1] 디렉토리 구조 (/GCLOUD)
+----------------------------------------
+{{ dir_tree.stdout | default('GCLOUD directory not found') }}
+
+[2] 파일시스템 사용률 (/GCLOUD)
+----------------------------------------
+{{ gcloud_df.stdout | default('GCLOUD filesystem not found') }}
+
+[3] MariaDB 서비스 상태
+----------------------------------------
+ActiveState : {{ mariadb_service.status.ActiveState }}
+SubState    : {{ mariadb_service.status.SubState }}
+
+[4] MariaDB 리스너 (3306)
+----------------------------------------
+{{ mariadb_listener.stdout | default('3306 NOT LISTENING') }}
+
+[5] OS 메모리 사용률
+----------------------------------------
+{{ mem_usage.stdout }}
+
+[6] OS CPU 사용률
+----------------------------------------
+{{ cpu_usage.stdout }}
+
+[7] OS 프로세스 개수
+----------------------------------------
+{{ process_count.stdout }}
+
+[8] InnoDB Buffer Pool Size
+----------------------------------------
+{{ innodb_bp.stdout | default('N/A') }}
+
+[9] Binary Log 상태
+----------------------------------------
+{{ log_bin.stdout | default('N/A') }}
+
+[10] 테이블스페이스 사용률
+----------------------------------------
+{{ tablespace.stdout | default('N/A') }}
+
+========================================
+점검 완료
+========================================
+

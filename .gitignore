@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and PID files
+*.log
+*.pid
+
+# API Server
+api_server.log
+api_server.pid
+
+# Inventory files (실제 서버 정보 포함)
+naver_cloud_inventory
+inventory
+
+# SSH Keys
+*.pem
+*.key
+id_rsa
+id_ed25519
+naver_cloud_key
+~/.ssh/*
+
+# 기타
+requirements_installed.flag
+.DS_Store
+*.bak
+*.tmp
+

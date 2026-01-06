@@ -1,0 +1,14 @@
+---
+- name: "★★★ 광주센터 서버 통합 정밀 점검 (V2) ★★★"
+  hosts: all
+  gather_facts: no
+
+# 1. OS 점검 불러오기
+- import_playbook: os_check.yml
+
+# 2. DB 점검 불러오기
+- import_playbook: db_check.yml
+
+# 3. WAS 점검 불러오기
+- import_playbook: was_check.yml
+

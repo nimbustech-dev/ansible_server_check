@@ -1,0 +1,70 @@
+---
+# 공통 API 전송 role
+# 모든 팀원이 자신의 플레이북에서 include_role로 사용 가능
+
+################################
+# 1. JSON 결과 생성
+################################
+- name: Generate JSON result for API
+  set_fact:
+    api_payload: |
+      {
+        "check_type": "{{ check_type }}",
+        "hostname": "{{ inventory_hostname }}",
+        "check_time": "{{ ansible_date_time.iso8601 }}",
+        "checker": "{{ checker_name }}",
+        "status": "success",
+        "results": {{ check_results | to_json }}
+      }
+
+################################
+# 2. JSON 파일로 저장 (로컬 백업용)
+################################
+- name: Save JSON result to local file
+  copy:
+    content: "{{ api_payload }}"
+    dest: "/tmp/{{ check_type }}_check_result_{{ ansible_date_time.epoch }}.json"
+  delegate_to: localhost
+  become: no
+  run_once: true
+  failed_when: false  # 파일 저장 실패해도 계속 진행
+  ignore_errors: yes
+
+################################
+# 3. API 서버로 전송
+################################
+- name: Send check result to API server
+  uri:
+    url: "{{ api_server_url | default(api_server.url | default('http://192.168.0.18:8000/api/checks')) }}"
+    method: POST
+    body: "{{ api_payload }}"
+    body_format: json
+    status_code: [200, 201]
+    timeout: "{{ api_server.timeout | default(60) }}"
+    headers:
+      Content-Type: "application/json"
+  register: api_response
+  delegate_to: localhost
+  become: no
+  run_once: true
+  failed_when: false  # API 실패해도 점검 자체는 성공으로 처리
+  ignore_errors: yes  # 오류 무시하고 계속 진행
+  retries: "{{ api_server.retry_count | default(5) }}"
+  delay: 3
+
+################################
+# 4. 전송 결과 로깅
+################################
+- name: Log API response
+  debug:
+    msg: |
+      API 전송 결과:
+      - 상태 코드: {{ api_response.status | default('N/A') }}
+      - 응답: {{ api_response.json | default(api_response.msg) | default('N/A') }}
+  when: api_response is defined
+
+- name: Warn if API send failed
+  debug:
+    msg: "⚠️ API 서버로 전송 실패. 로컬 파일은 저장되었습니다: /tmp/{{ check_type }}_check_result_*.json"
+  when: api_response.status | default(0) not in [200, 201]
+

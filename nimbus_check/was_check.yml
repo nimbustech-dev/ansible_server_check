@@ -1,0 +1,22 @@
+---
+- name: "[WAS] Apache Tomcat 정밀 점검"
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: "1. Tomcat 프로세스 기동 확인"
+      shell: "ps -ef | grep java | grep tomcat | grep -v grep"
+      register: tomcat_proc
+      failed_when: tomcat_proc.stdout == ""
+      ignore_errors: yes
+
+    - name: "2. 금일 접속 로그 에러(Non-200) 카운트"
+      shell: "grep '[^200]' /usr/local/tomcat9/logs/localhost_access_log.$(date +%Y-%m-%d).txt | wc -l"
+      register: error_count
+      failed_when: error_count.stdout | int > 0
+      ignore_errors: yes
+
+    - name: "3. 기동 스크립트 수정일자 확인"
+      shell: "date -r /usr/local/tomcat9/bin/startup.sh"
+      register: script_date
+      ignore_errors: yes
+
