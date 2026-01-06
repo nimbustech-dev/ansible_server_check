@@ -1,0 +1,49 @@
+========================================
+Redhat OS 자동 점검 보고서
+========================================
+
+호스트명: {{ inventory_hostname }}
+
+[1] CPU 정보
+----------------------------------------
+모델명:
+{{ redhat_check_results.cpu.model | default('N/A') }}
+
+CPU 사용률:
+{{ redhat_check_results.cpu.usage_percent | default('N/A') }}
+
+CPU 상위 프로세스:
+{{ redhat_check_results.cpu.top_processes | default('N/A') }}
+
+[2] 메모리 정보
+----------------------------------------
+Swap 상태:
+{{ redhat_check_results.memory.swap | default('N/A') }}
+
+메모리 사용 요약:
+{{ redhat_check_results.memory.usage | default('N/A') }}
+
+메모리 상위 프로세스:
+{{ redhat_check_results.memory.top_processes | default('N/A') }}
+
+[3] 디스크 정보
+----------------------------------------
+루트(/) 사용률(%):
+{{ redhat_check_results.disk.root_usage_percent | default('N/A') }}
+
+전체 디스크 현황:
+{{ redhat_check_results.disk.all | default('N/A') }}
+
+[4] 네트워크 / NTP
+----------------------------------------
+Ping 결과:
+{{ redhat_check_results.network.ping_result | default('N/A') }}
+
+NTP 동기화 상태:
+{{ redhat_check_results.ntp.status | default('N/A') }}
+
+========================================
+점검 완료
+========================================
+
+
