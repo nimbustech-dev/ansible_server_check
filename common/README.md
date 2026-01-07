@@ -15,7 +15,7 @@ api_server:
 
 ### 2. 각 팀원의 플레이북에서 사용하기
 
-#### 예시 1: OS 체크 (nimbus_check/os_check.yml)
+#### 예시 1: OS 체크 (redhat_check/redhat_check.yml)
 ```yaml
 ---
 - name: "[OS] 서버 기초 체력 정밀 점검"
@@ -47,7 +47,7 @@ api_server:
           ntp_check: "{{ ntp_check.stdout }}"
 ```
 
-#### 예시 2: WAS 체크 (nimbus_check/was_check.yml)
+#### 예시 2: WAS 체크 (tomcat_check/tomcat_check.yml)
 ```yaml
 ---
 - name: "[WAS] Apache Tomcat 정밀 점검"

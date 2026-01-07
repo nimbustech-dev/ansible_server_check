@@ -44,11 +44,18 @@ ansible/
 │   ├── requirements.txt     # Python 의존성 패키지
 │   └── .env                 # 환경 변수 설정
 │
-├── nimbus_check/            # Nimbus 서버 점검 플레이북
-│   ├── os_check.yml         # OS 점검 플레이북
-│   ├── was_check.yml        # WAS 점검 플레이북
-│   ├── db_check.yml         # DB 점검 플레이북
-│   └── system_check_v2.yml  # 시스템 종합 점검
+├── redhat_check/            # Redhat OS 점검 플레이북
+│   ├── redhat_check.yml
+│   └── roles/
+│       └── redhat_check/
+│           └── tasks/main.yml
+│
+├── tomcat_check/            # Tomcat WAS 점검 플레이북
+│   ├── tomcat_check.yml
+│   └── roles/
+│       └── tomcat_check/
+│           ├── tasks/main.yml
+│           └── templates/report.j2
 │
 ├── mariadb_check/           # MariaDB 점검 플레이북
 │   ├── mariadb_check.yml
@@ -172,13 +179,13 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 #### OS 점검
 
 ```bash
-ansible-playbook -i inventory nimbus_check/os_check.yml
+ansible-playbook -i inventory redhat_check/redhat_check.yml
 ```
 
 #### WAS 점검
 
 ```bash
-ansible-playbook -i inventory nimbus_check/was_check.yml
+ansible-playbook -i inventory tomcat_check/tomcat_check.yml
 ```
 
 #### MariaDB 점검
