@@ -284,7 +284,61 @@
   failed_when: false
 
 ################################
-# 10. 보고서 생성
+# 10. OS 기초 체력 점검 (DB 서버 운영에 필수적인 항목)
+################################
+# 10-1. CPU 모델명 확인
+# 중요성: DB 서버 하드웨어 스펙 확인, 성능 분석 및 용량 계획에 필요
+- name: Get CPU model name
+  shell: |
+    lscpu | grep "Model name" | awk -F: '{print $2}' | xargs
+  register: cpu_model_name
+  changed_when: false
+  failed_when: false
+
+# 10-2. 메모리(Swap) 상태 점검
+# 중요성: DB 서버에서 Swap 사용은 성능 저하 신호. 메모리 부족 시 Swap 사용되면 쿼리 성능 급격히 저하
+- name: Check Swap status
+  shell: free -h | grep Swap
+  register: swap_status
+  changed_when: false
+  failed_when: false
+
+# 10-3. 디스크(/) 사용률 점검
+# 중요성: 루트 디스크가 가득 차면 시스템 로그, 임시 파일 생성 불가로 DB 서비스 장애 가능
+- name: Check root disk usage
+  shell: df -h / | awk 'NR==2 {print $5}' | tr -d '%'
+  register: root_disk_usage
+  changed_when: false
+  failed_when: false
+
+# 10-4. 전체 디스크 사용 현황
+# 중요성: DB 데이터 디렉토리 외 다른 디스크 사용률 확인. 전체 디스크 상황 파악 필요
+- name: Check all disk usage
+  shell: df -h
+  register: all_disk_usage
+  changed_when: false
+  failed_when: false
+
+# 10-5. 외부 네트워크(Google) 통신 점검
+# 중요성: DB 백업, 복제, 모니터링, 패키지 업데이트 등에 외부 네트워크 연결 필요
+- name: Test external network connectivity
+  shell: ping -c 2 8.8.8.8
+  register: network_ping_result
+  changed_when: false
+  failed_when: false
+  ignore_errors: yes
+
+# 10-6. 시간 동기화(NTP) 점검
+# 중요성: DB 서버 시간 불일치는 트랜잭션 로그 순서, 복제 동기화, 백업 일관성에 심각한 문제 발생
+- name: Check NTP synchronization
+  shell: chronyc sources -v 2>/dev/null || echo "NTP not configured"
+  register: ntp_sync_status
+  changed_when: false
+  failed_when: false
+  ignore_errors: yes
+
+################################
+# 11. 보고서 생성
 ################################
 - name: Generate MariaDB check report
   template:

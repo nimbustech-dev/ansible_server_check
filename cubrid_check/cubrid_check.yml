@@ -86,4 +86,11 @@
             ncia_usage: "{{ ncia_df.stdout | default('N/A') }}"
           ha:
             ha_status: "{{ cubrid_ha_status.stdout | default('N/A') }}"
+          os_basics:
+            cpu_model_name: "{{ cpu_model_name.stdout | default('N/A') }}"
+            swap_status: "{{ swap_status.stdout | default('N/A') }}"
+            root_disk_usage: "{{ root_disk_usage.stdout | default('N/A') }}"
+            all_disk_usage: "{{ all_disk_usage.stdout | default('N/A') }}"
+            network_ping_result: "{{ network_ping_result.stdout | default('N/A') }}"
+            ntp_sync_status: "{{ ntp_sync_status.stdout | default('N/A') }}"
 
