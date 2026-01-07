@@ -257,9 +257,53 @@
             margin-bottom: 20px;
         }
         
+        .table-scroll-container {
+            position: relative;
+        }
+        
+        .table-scrollbar-top {
+            width: 100%;
+            height: 20px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            margin-bottom: 10px;
+            border-radius: 8px;
+        }
+        
+        .table-scrollbar-top::-webkit-scrollbar {
+            height: 12px;
+        }
+        
+        .table-scrollbar-top::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 6px;
+        }
+        
+        .table-scrollbar-top::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 6px;
+        }
+        
+        .table-scrollbar-top::-webkit-scrollbar-thumb:hover {
+            background: #5568d3;
+        }
+        
+        .table-scrollbar-top-content {
+            height: 1px;
+        }
+        
         .table-wrapper {
             overflow-x: auto;
             border-radius: 8px;
+        }
+        
+        .table-wrapper::-webkit-scrollbar {
+            display: none; /* 아래쪽 스크롤 바 숨김 */
+        }
+        
+        .table-wrapper {
+            -ms-overflow-style: none; /* IE and Edge */
+            scrollbar-width: none; /* Firefox */
         }
         
         table {
@@ -652,8 +696,13 @@
         
         <div class="table-section">
             <h3>📋 상세 점검 결과</h3>
-            <div class="table-wrapper" id="tableWrapper">
-                <div class="loading">데이터 로딩 중</div>
+            <div class="table-scroll-container">
+                <div class="table-scrollbar-top" id="topScrollbar">
+                    <div class="table-scrollbar-top-content" id="topScrollbarContent"></div>
+                </div>
+                <div class="table-wrapper" id="tableWrapper">
+                    <div class="loading">데이터 로딩 중</div>
+                </div>
             </div>
         </div>
     </div>
@@ -920,6 +969,7 @@
             if (results.length === 0) {
                 document.getElementById('tableWrapper').innerHTML = 
                     '<div class="no-data">표시할 데이터가 없습니다.</div>';
+                document.getElementById('topScrollbarContent').style.width = '0px';
                 return;
             }
             
@@ -952,6 +1002,34 @@
             
             html += '</tbody></table>';
             document.getElementById('tableWrapper').innerHTML = html;
+            
+            // 스크롤 바 동기화 설정
+            syncScrollbars();
+        }
+        
+        // 스크롤 바 동기화 함수
+        function syncScrollbars() {
+            const tableWrapper = document.getElementById('tableWrapper');
+            const topScrollbar = document.getElementById('topScrollbar');
+            const topScrollbarContent = document.getElementById('topScrollbarContent');
+            
+            if (!tableWrapper || !topScrollbar || !topScrollbarContent) return;
+            
+            // 테이블의 실제 너비를 가져와서 상단 스크롤 바 컨텐츠 너비 설정
+            const table = tableWrapper.querySelector('table');
+            if (table) {
+                const tableWidth = table.offsetWidth;
+                topScrollbarContent.style.width = tableWidth + 'px';
+                
+                // 테이블 스크롤과 상단 스크롤 바 동기화
+                tableWrapper.addEventListener('scroll', function() {
+                    topScrollbar.scrollLeft = tableWrapper.scrollLeft;
+                });
+                
+                topScrollbar.addEventListener('scroll', function() {
+                    tableWrapper.scrollLeft = topScrollbar.scrollLeft;
+                });
+            }
         }
         
         // 셀 포맷팅

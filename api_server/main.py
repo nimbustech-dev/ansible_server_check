@@ -343,19 +343,22 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
                 # df -h 출력에서 70% 이상인 것만 카운트
                 lines = all_disk_str.split("\n")
                 high_usage_count = 0
-                for line in lines:
-                    if "%" in line:
+                for line in lines[1:]:  # 첫 줄(헤더) 제외
+                    if "%" in line and "Use%" not in line:
                         parts = line.split()
                         for part in parts:
-                            if part.endswith("%"):
-                                usage = int(part.replace("%", ""))
-                                if usage >= 70:
-                                    high_usage_count += 1
+                            if part.endswith("%") and part != "Use%":
+                                try:
+                                    usage = int(part.replace("%", ""))
+                                    if usage >= 70:
+                                        high_usage_count += 1
+                                except (ValueError, AttributeError):
+                                    pass
                 if high_usage_count > 0:
                     all_disk_summary = f"{high_usage_count}개 디스크 70% 이상"
                 else:
                     all_disk_summary = "정상"
-        except:
+        except Exception:
             pass
         
         # 네트워크 통신 상태
@@ -596,19 +599,22 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
                 # df -h 출력에서 70% 이상인 것만 카운트
                 lines = all_disk_str.split("\n")
                 high_usage_count = 0
-                for line in lines:
-                    if "%" in line:
+                for line in lines[1:]:  # 첫 줄(헤더) 제외
+                    if "%" in line and "Use%" not in line:
                         parts = line.split()
                         for part in parts:
-                            if part.endswith("%"):
-                                usage = int(part.replace("%", ""))
-                                if usage >= 70:
-                                    high_usage_count += 1
+                            if part.endswith("%") and part != "Use%":
+                                try:
+                                    usage = int(part.replace("%", ""))
+                                    if usage >= 70:
+                                        high_usage_count += 1
+                                except (ValueError, AttributeError):
+                                    pass
                 if high_usage_count > 0:
                     all_disk_summary = f"{high_usage_count}개 디스크 70% 이상"
                 else:
                     all_disk_summary = "정상"
-        except:
+        except Exception:
             pass
         
         # 네트워크 통신 상태
@@ -755,11 +761,12 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
         cpu_top = "N/A"
         mem_top = "N/A"
         try:
-            cpu_str = os_resources.get("cpu_usage_top", "")
-            mem_str = os_resources.get("mem_usage_top", "")
-            if isinstance(cpu_str, str) and cpu_str.strip():
+            # CUBRID는 cpu_top_processes/mem_top_processes도 확인
+            cpu_str = os_resources.get("cpu_top_processes", "") or os_resources.get("cpu_usage_top", "")
+            mem_str = os_resources.get("mem_top_processes", "") or os_resources.get("mem_usage_top", "")
+            if isinstance(cpu_str, str) and cpu_str.strip() and cpu_str != "N/A":
                 cpu_top = "있음"
-            if isinstance(mem_str, str) and mem_str.strip():
+            if isinstance(mem_str, str) and mem_str.strip() and mem_str != "N/A":
                 mem_top = "있음"
         except:
             pass
@@ -819,19 +826,22 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
                 # df -h 출력에서 70% 이상인 것만 카운트
                 lines = all_disk_str.split("\n")
                 high_usage_count = 0
-                for line in lines:
-                    if "%" in line:
+                for line in lines[1:]:  # 첫 줄(헤더) 제외
+                    if "%" in line and "Use%" not in line:
                         parts = line.split()
                         for part in parts:
-                            if part.endswith("%"):
-                                usage = int(part.replace("%", ""))
-                                if usage >= 70:
-                                    high_usage_count += 1
+                            if part.endswith("%") and part != "Use%":
+                                try:
+                                    usage = int(part.replace("%", ""))
+                                    if usage >= 70:
+                                        high_usage_count += 1
+                                except (ValueError, AttributeError):
+                                    pass
                 if high_usage_count > 0:
                     all_disk_summary = f"{high_usage_count}개 디스크 70% 이상"
                 else:
                     all_disk_summary = "정상"
-        except:
+        except Exception:
             pass
         
         # 네트워크 통신 상태

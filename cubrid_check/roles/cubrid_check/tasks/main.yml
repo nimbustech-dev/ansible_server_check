@@ -67,15 +67,27 @@
   failed_when: false
   changed_when: false
 
-- name: CPU 사용률 상위 프로세스
+- name: CPU 사용률 상위 프로세스 (CUBRID만)
   shell: ps aux --sort=-%cpu | grep cubrid | egrep -v grep | head -5
   register: cubrid_cpu_usage
   failed_when: false
   changed_when: false
 
-- name: 메모리 사용률 상위 프로세스
+- name: 메모리 사용률 상위 프로세스 (CUBRID만)
   shell: ps aux --sort=-%mem | grep cubrid | egrep -v grep | head -5
   register: cubrid_mem_usage
+  failed_when: false
+  changed_when: false
+
+- name: CPU 사용률 상위 프로세스 (전체 시스템)
+  shell: ps aux --sort=-%cpu | head -6 | tail -5 | awk '{printf "%-10s %6s%% %s\n", $11, $3, $12}'
+  register: cpu_top_processes
+  failed_when: false
+  changed_when: false
+
+- name: 메모리 사용률 상위 프로세스 (전체 시스템)
+  shell: ps aux --sort=-%mem | head -6 | tail -5 | awk '{printf "%-10s %6s%% %s\n", $11, $4, $12}'
+  register: mem_top_processes
   failed_when: false
   changed_when: false
 

@@ -76,6 +76,8 @@
           os_resources:
             cpu_usage_top: "{{ cubrid_cpu_usage.stdout | default('N/A') }}"
             mem_usage_top: "{{ cubrid_mem_usage.stdout | default('N/A') }}"
+            cpu_top_processes: "{{ cpu_top_processes.stdout | default('N/A') }}"
+            mem_top_processes: "{{ mem_top_processes.stdout | default('N/A') }}"
           database:
             db_list: "{{ db_list.stdout | default('N/A') }}"
             databases_txt_exists: "{{ databases_txt.stat.exists | default(false) }}"
