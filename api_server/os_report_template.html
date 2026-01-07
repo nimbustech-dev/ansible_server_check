@@ -685,10 +685,13 @@
             });
         }
         
-        // 데이터 로드
+        // 데이터 로드 (포맷된 OS 데이터 사용)
         async function loadData() {
             try {
-                const response = await fetch('/api/checks?checker=강하나&check_type=os&limit=1000');
+                const response = await fetch('/api/os-checks/data?limit=1000&t=' + Date.now(), {
+                    cache: 'no-cache',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
                 const data = await response.json();
                 
                 if (data.success && data.results) {
@@ -707,21 +710,21 @@
             }
         }
         
-        // 필터 적용
+        // 필터 적용 (포맷된 컬럼 기준)
         function applyFilters() {
             const filterHostname = document.getElementById('filterHostname').value.toLowerCase();
             const filterStatus = document.getElementById('filterStatus').value.toLowerCase();
             
             let filtered = allData.filter(row => {
                 if (filterHostname) {
-                    const hostname = String(row.hostname || '').toLowerCase();
+                    const hostname = String(row['호스트명'] || row.hostname || '').toLowerCase();
                     if (!hostname.includes(filterHostname)) {
                         return false;
                     }
                 }
                 
                 if (filterStatus) {
-                    const status = String(row.status || '').toLowerCase();
+                    const status = String(row['상태'] || row.status || '').toLowerCase();
                     if (!status.includes(filterStatus)) {
                         return false;
                     }
@@ -748,12 +751,12 @@
         function updateStats(data) {
             const total = data.length;
             const success = data.filter(r => {
-                const status = String(r.status || '').toLowerCase();
+                const status = String(r['상태'] || r.status || '').toLowerCase();
                 return status.includes('success') && !status.includes('x');
             }).length;
-            const warning = data.filter(r => String(r.status || '').toLowerCase().includes('warning')).length;
+            const warning = data.filter(r => String(r['상태'] || r.status || '').toLowerCase().includes('warning')).length;
             const error = data.filter(r => {
-                const status = String(r.status || '').toLowerCase();
+                const status = String(r['상태'] || r.status || '').toLowerCase();
                 return status.includes('error') || status.includes('success x');
             }).length;
             
@@ -766,12 +769,12 @@
         // 차트 업데이트
         function updateCharts(data) {
             const success = data.filter(r => {
-                const status = String(r.status || '').toLowerCase();
+                const status = String(r['상태'] || r.status || '').toLowerCase();
                 return status.includes('success') && !status.includes('x');
             }).length;
-            const warning = data.filter(r => String(r.status || '').toLowerCase().includes('warning')).length;
+            const warning = data.filter(r => String(r['상태'] || r.status || '').toLowerCase().includes('warning')).length;
             const error = data.filter(r => {
-                const status = String(r.status || '').toLowerCase();
+                const status = String(r['상태'] || r.status || '').toLowerCase();
                 return status.includes('error') || status.includes('success x');
             }).length;
             
@@ -781,9 +784,10 @@
             // 일별 추이 차트 업데이트
             const dateMap = {};
             data.forEach(row => {
-                if (row.check_time) {
+                const checkTime = row['점검시간'] || row.check_time;
+                if (checkTime) {
                     try {
-                        const date = new Date(row.check_time);
+                        const date = new Date(checkTime);
                         const dateStr = date.toLocaleDateString('ko-KR', { 
                             year: 'numeric',
                             month: '2-digit', 
@@ -791,7 +795,7 @@
                         });
                         dateMap[dateStr] = (dateMap[dateStr] || 0) + 1;
                     } catch (e) {
-                        console.error('Date parsing error:', e, row.check_time);
+                        console.error('Date parsing error:', e, checkTime);
                     }
                 }
             });
@@ -844,7 +848,7 @@
             `;
         }
         
-        // 테이블 렌더링
+        // 테이블 렌더링 (DB 대시보드와 동일: 동적 컬럼)
         function renderTable(results) {
             if (results.length === 0) {
                 document.getElementById('tableWrapper').innerHTML = 
@@ -852,37 +856,30 @@
                 return;
             }
             
+            const firstRow = results[0];
+            const columns = Object.keys(firstRow);
+            
             let html = '<table><thead><tr>';
-            html += '<th>ID</th>';
-            html += '<th>호스트명</th>';
-            html += '<th>점검 시간</th>';
-            html += '<th>상태</th>';
-            html += '<th>CPU 정보</th>';
-            html += '<th>NTP 상태</th>';
-            html += '<th>시스템 로그</th>';
-            html += '<th>생성 시간</th>';
+            columns.forEach(col => {
+                html += `<th>${col}</th>`;
+            });
             html += '</tr></thead><tbody>';
             
             results.forEach((row, index) => {
-                const status = String(row.status || '').toLowerCase();
-                const results = row.results || {};
+                const status = String(row['상태'] || row.status || '').toLowerCase();
                 // 오류 판단: error, x 포함, 또는 N/A 값이 있는 경우
-                const hasNA = !row.id || !row.hostname || !row.check_time || 
-                             !results.cpu || results.cpu === 'N/A' ||
-                             !results.ntp || results.ntp === 'N/A' ||
-                             !results.log || results.log === 'N/A';
+                const hasNA = columns.some(col => {
+                    const value = row[col];
+                    return value === null || value === undefined || value === 'N/A' || value === '';
+                });
                 const isError = status.includes('error') || status.includes('x') || hasNA;
                 const rowClass = isError ? 'error-row' : '';
+                const onclickAttr = isError ? `onclick="showErrorDetails(${index})"` : '';
                 
-                html += `<tr class="${rowClass}" ${isError ? `onclick="showErrorDetails(${index})"` : ''} data-row-index="${index}">`;
-                html += `<td>${row.id || 'N/A'}</td>`;
-                html += `<td>${row.hostname || 'N/A'}</td>`;
-                html += `<td>${formatDate(row.check_time)}</td>`;
-                html += `<td>${formatStatus(row.status)}</td>`;
-                html += `<td>${formatCell(results.cpu, 'cpu')}</td>`;
-                html += `<td>${formatCell(results.ntp, 'ntp')}</td>`;
-                html += `<td>${formatCell(results.log, 'log')}</td>`;
-                html += `<td>${formatDate(row.created_at)}</td>`;
+                html += `<tr class="${rowClass}" ${onclickAttr} data-row-index="${index}">`;
+                columns.forEach(col => {
+                    html += `<td>${formatCell(row[col], col)}</td>`;
+                });
                 html += '</tr>';
             });
             
@@ -890,46 +887,50 @@
             document.getElementById('tableWrapper').innerHTML = html;
         }
         
-        // 셀 포맷팅
+        // 셀 포맷팅 (DB 리포트와 동일한 스타일)
         function formatCell(value, columnName) {
             if (value === null || value === undefined || value === 'N/A' || value === '') {
                 return '<span style="color: #a0aec0;">N/A</span>';
             }
 
-            // 객체 형태(OS 전용 구조) 예쁘게 표시
-            if (typeof value === 'object') {
-                if (columnName === 'cpu') {
-                    const model = value.model || value.cpu_model || '';
-                    const usage = value.usage_percent || value.usage || '';
-                    let text = model;
-                    if (usage) {
-                        text = text ? `${text} / ${usage}` : usage;
-                    }
-                    const str = text || JSON.stringify(value);
-                    return str.length > 100 ? str.substring(0, 100) + '...' : str;
+            // 점검유형 배지
+            if (columnName === '점검유형') {
+                const type = String(value).toUpperCase();
+                if (type === 'OS') {
+                    return `<span class="badge badge-os">${value}</span>`;
                 }
-
-                if (columnName === 'ntp') {
-                    const status = value.status || value.ntp || '';
-                    const str = status || JSON.stringify(value);
-                    return str.length > 100 ? str.substring(0, 100) + '...' : str;
-                }
-
-                if (columnName === 'log') {
-                    const str = value.message || JSON.stringify(value);
-                    return str.length > 100 ? str.substring(0, 100) + '...' : str;
-                }
-
-                const str = JSON.stringify(value);
-                return str.length > 100 ? str.substring(0, 100) + '...' : str;
+                return `<span class="badge">${value}</span>`;
             }
 
-            if (columnName === 'cpu' || columnName === 'log') {
-                const str = String(value);
-                if (str.length > 100) {
-                    return str.substring(0, 100) + '...';
+            // 상태 컬럼
+            if (columnName === '상태') {
+                const status = String(value).toLowerCase();
+                if (status.includes('success') && !status.includes('x')) {
+                    return `<span class="status-success">${value}</span>`;
+                } else if (status.includes('error') || status.includes('x')) {
+                    return `<span class="status-error">${value}</span>`;
+                } else if (status.includes('warning')) {
+                    return `<span class="status-warning">${value}</span>`;
                 }
-                return str;
+            }
+
+            // 설치확인 컬럼
+            if (columnName === '설치확인') {
+                if (value === '✓' || value === true || String(value).toLowerCase() === 'true') {
+                    return '<span class="check-ok">✓</span>';
+                } else {
+                    return '<span class="check-fail">✗</span>';
+                }
+            }
+
+            // 날짜/시간 포맷팅
+            if (columnName === '점검시간' && String(value).includes('T')) {
+                try {
+                    const date = new Date(value);
+                    return date.toLocaleString('ko-KR');
+                } catch (e) {
+                    return value;
+                }
             }
 
             return String(value);
