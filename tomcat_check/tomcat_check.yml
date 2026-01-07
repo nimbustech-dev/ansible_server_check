@@ -1,6 +1,6 @@
 ---
 - name: Tomcat 통합 자동 점검
-  hosts: tomcat
+  hosts: all
   become: yes
   gather_facts: yes
   
@@ -27,8 +27,8 @@
     - name: Include API sender tasks
       include_tasks: "{{ playbook_dir }}/../common/roles/api_sender/tasks/main.yml"
       vars:
-        check_type: "tomcat"
-        checker_name: "성태환"
+        check_type: "was"
+        checker_name: "이수민"
         check_results:
           installation:
             installed: "{{ tomcat_installation.stdout | default('N/A') }}"

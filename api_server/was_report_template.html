@@ -598,6 +598,16 @@
                 </div>
                 
                 <div class="filter-group">
+                    <label>날짜</label>
+                    <select id="filterDate" onchange="applyFilters()">
+                        <option value="">전체</option>
+                        <option value="today">오늘</option>
+                        <option value="week">최근 7일</option>
+                        <option value="month">최근 30일</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
                     <label>&nbsp;</label>
                     <button class="btn btn-secondary" onclick="clearFilters()">필터 초기화</button>
                 </div>
@@ -688,22 +698,48 @@
         // 데이터 로드
         async function loadData() {
             try {
-                const response = await fetch('/api/checks?checker=이수민&check_type=was&limit=1000');
+                // WAS 데이터 로드 (format_was_result로 변환된 데이터)
+                const response = await fetch('/api/was-checks/data?limit=1000');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
                 const data = await response.json();
+                console.log('API 응답:', data);
                 
                 if (data.success && data.results) {
-                    allData = data.results;
+                    // 이수민 담당자 데이터만 필터링
+                    allData = data.results.filter(row => {
+                        const checker = String(row.담당자 || row.checker || '').trim();
+                        return checker === '이수민' || checker === '';
+                    });
+                    
+                    console.log(`총 ${data.results.length}건 중 이수민 담당자 데이터: ${allData.length}건`);
+                    
+                    // 최신순 정렬 (점검시간 기준)
+                    allData.sort((a, b) => {
+                        const dateA = new Date(a.점검시간 || a.check_time || a.created_at || 0);
+                        const dateB = new Date(b.점검시간 || b.check_time || b.created_at || 0);
+                        return dateB - dateA;
+                    });
+                    
                     applyFilters();
                     updateStats(allData);
                     updateCharts(allData);
                 } else {
+                    console.error('API 응답 오류:', data);
                     document.getElementById('tableWrapper').innerHTML = 
-                        '<div class="no-data">데이터를 불러올 수 없습니다.</div>';
+                        '<div class="no-data">데이터를 불러올 수 없습니다. (API 응답 오류)</div>';
                 }
             } catch (error) {
                 console.error('Error loading data:', error);
                 document.getElementById('tableWrapper').innerHTML = 
-                    '<div class="no-data">데이터 로딩 중 오류가 발생했습니다.</div>';
+                    `<div class="no-data">
+                        데이터 로딩 중 오류가 발생했습니다.<br>
+                        <small>오류: ${error.message}</small><br>
+                        <small>API 서버가 실행 중인지 확인하세요.</small>
+                    </div>`;
             }
         }
         
@@ -711,18 +747,43 @@
         function applyFilters() {
             const filterHostname = document.getElementById('filterHostname').value.toLowerCase();
             const filterStatus = document.getElementById('filterStatus').value.toLowerCase();
+            const filterDate = document.getElementById('filterDate').value;
+            
+            const now = new Date();
+            let dateFilter = null;
+            
+            if (filterDate === 'today') {
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                dateFilter = (date) => new Date(date) >= today;
+            } else if (filterDate === 'week') {
+                const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                dateFilter = (date) => new Date(date) >= weekAgo;
+            } else if (filterDate === 'month') {
+                const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                dateFilter = (date) => new Date(date) >= monthAgo;
+            }
             
             let filtered = allData.filter(row => {
+                // 호스트명 필터 (한글 키 또는 영문 키 지원)
                 if (filterHostname) {
-                    const hostname = String(row.hostname || '').toLowerCase();
+                    const hostname = String(row.호스트명 || row.hostname || '').toLowerCase();
                     if (!hostname.includes(filterHostname)) {
                         return false;
                     }
                 }
                 
+                // 상태 필터 (한글 키 또는 영문 키 지원)
                 if (filterStatus) {
-                    const status = String(row.status || '').toLowerCase();
+                    const status = String(row.상태 || row.status || '').toLowerCase();
                     if (!status.includes(filterStatus)) {
+                        return false;
+                    }
+                }
+                
+                // 날짜 필터
+                if (dateFilter) {
+                    const checkDate = row.점검시간 || row.check_time || row.created_at;
+                    if (!checkDate || !dateFilter(checkDate)) {
                         return false;
                     }
                 }
@@ -741,6 +802,7 @@
         function clearFilters() {
             document.getElementById('filterHostname').value = '';
             document.getElementById('filterStatus').value = '';
+            document.getElementById('filterDate').value = '';
             applyFilters();
         }
         
@@ -754,21 +816,37 @@
             let memCount = 0;
             
             data.forEach(row => {
-                const results = row.results || {};
-                if (results.tomcat_active === 1 || results.tomcat_active === '1') {
+                // 리스너(8080)가 LISTENING이면 활성으로 간주
+                const listener8080 = row['리스너(8080)'] || row['리스너(8080)'] || '';
+                if (String(listener8080).includes('LISTENING')) {
                     activeCount++;
                 }
-                if (results.cpu_usage) {
-                    const cpu = parseFloat(String(results.cpu_usage).replace('%', ''));
+                
+                // CPU 사용률
+                const cpuUsage = row['CPU사용률'] || '';
+                if (cpuUsage && cpuUsage !== 'N/A') {
+                    const cpu = parseFloat(String(cpuUsage).replace('%', ''));
                     if (!isNaN(cpu)) {
                         totalCpu += cpu;
                         cpuCount++;
                     }
                 }
-                if (results.mem_free_mb) {
-                    const mem = parseFloat(String(results.mem_free_mb));
-                    if (!isNaN(mem)) {
-                        totalMem += mem;
+                
+                // 메모리 여유 (Available)
+                const memAvailable = row['메모리(Available)'] || '';
+                if (memAvailable && memAvailable !== 'N/A') {
+                    // "12Gi" 형식에서 숫자 추출
+                    const memStr = String(memAvailable);
+                    let memValue = 0;
+                    if (memStr.includes('Gi') || memStr.includes('G')) {
+                        memValue = parseFloat(memStr.replace('Gi', '').replace('G', '')) * 1024;
+                    } else if (memStr.includes('Mi') || memStr.includes('M')) {
+                        memValue = parseFloat(memStr.replace('Mi', '').replace('M', ''));
+                    } else {
+                        memValue = parseFloat(memStr);
+                    }
+                    if (!isNaN(memValue)) {
+                        totalMem += memValue;
                         memCount++;
                     }
                 }
@@ -783,12 +861,12 @@
         // 차트 업데이트
         function updateCharts(data) {
             const success = data.filter(r => {
-                const status = String(r.status || '').toLowerCase();
+                const status = String(r.상태 || r.status || '').toLowerCase();
                 return status.includes('success') && !status.includes('x');
             }).length;
-            const warning = data.filter(r => String(r.status || '').toLowerCase().includes('warning')).length;
+            const warning = data.filter(r => String(r.상태 || r.status || '').toLowerCase().includes('warning')).length;
             const error = data.filter(r => {
-                const status = String(r.status || '').toLowerCase();
+                const status = String(r.상태 || r.status || '').toLowerCase();
                 return status.includes('error') || status.includes('success x');
             }).length;
             
@@ -798,9 +876,10 @@
             // 일별 추이 차트 업데이트
             const dateMap = {};
             data.forEach(row => {
-                if (row.check_time) {
+                const checkTime = row.점검시간 || row.check_time;
+                if (checkTime) {
                     try {
-                        const date = new Date(row.check_time);
+                        const date = new Date(checkTime);
                         const dateStr = date.toLocaleDateString('ko-KR', { 
                             year: 'numeric',
                             month: '2-digit', 
@@ -808,7 +887,7 @@
                         });
                         dateMap[dateStr] = (dateMap[dateStr] || 0) + 1;
                     } catch (e) {
-                        console.error('Date parsing error:', e, row.check_time);
+                        console.error('Date parsing error:', e, checkTime);
                     }
                 }
             });
@@ -861,7 +940,7 @@
             `;
         }
         
-        // 테이블 렌더링
+        // 테이블 렌더링 (DB 리포트와 동일한 방식 - 동적 컬럼 생성)
         function renderTable(results) {
             if (results.length === 0) {
                 document.getElementById('tableWrapper').innerHTML = 
@@ -869,61 +948,86 @@
                 return;
             }
             
+            const firstRow = results[0];
+            const columns = Object.keys(firstRow);
+            
             let html = '<table><thead><tr>';
-            html += '<th>ID</th>';
-            html += '<th>호스트명</th>';
-            html += '<th>점검 시간</th>';
-            html += '<th>상태</th>';
-            html += '<th>Tomcat 활성</th>';
-            html += '<th>CPU 사용률</th>';
-            html += '<th>메모리 여유 (MB)</th>';
-            html += '<th>디스크 사용률</th>';
-            html += '<th>생성 시간</th>';
+            columns.forEach(col => {
+                html += `<th>${col}</th>`;
+            });
             html += '</tr></thead><tbody>';
             
             results.forEach((row, index) => {
-                const status = String(row.status || '').toLowerCase();
-                const results = row.results || {};
+                const status = String(row.상태 || row.status || '').toLowerCase();
                 // 오류 판단: error, x 포함, 또는 N/A 값이 있는 경우
-                const hasNA = !row.id || !row.hostname || !row.check_time ||
-                             !results.tomcat_active || results.tomcat_active === 'N/A' ||
-                             !results.cpu_usage || results.cpu_usage === 'N/A' ||
-                             !results.mem_free_mb || results.mem_free_mb === 'N/A' ||
-                             !results.disk_usage || results.disk_usage === 'N/A';
+                const hasNA = columns.some(col => {
+                    const value = row[col];
+                    return value === null || value === undefined || value === 'N/A' || value === '';
+                });
                 const isError = status.includes('error') || status.includes('x') || hasNA;
                 const rowClass = isError ? 'error-row' : '';
+                const rowId = `row-${index}`;
                 
                 html += `<tr class="${rowClass}" ${isError ? `onclick="showErrorDetails(${index})"` : ''} data-row-index="${index}">`;
-                html += `<td>${row.id || 'N/A'}</td>`;
-                html += `<td>${row.hostname || 'N/A'}</td>`;
-                html += `<td>${formatDate(row.check_time)}</td>`;
-                html += `<td>${formatStatus(row.status)}</td>`;
-                html += `<td>${formatTomcatActive(results.tomcat_active)}</td>`;
-                html += `<td>${formatCell(results.cpu_usage, 'cpu')}</td>`;
-                html += `<td>${formatCell(results.mem_free_mb, 'mem')}</td>`;
-                html += `<td>${formatCell(results.disk_usage, 'disk')}</td>`;
-                html += `<td>${formatDate(row.created_at)}</td>`;
+                columns.forEach(col => {
+                    html += `<td>${formatCell(row[col], col)}</td>`;
+                });
                 html += '</tr>';
             });
             
             html += '</tbody></table>';
             document.getElementById('tableWrapper').innerHTML = html;
+            
+            // 전역 변수에 저장 (상세보기에서 사용)
+            currentFilteredData = results;
         }
         
-        // 셀 포맷팅
+        // 셀 포맷팅 (DB 리포트와 동일한 방식)
         function formatCell(value, columnName) {
             if (value === null || value === undefined || value === 'N/A' || value === '') {
                 return '<span style="color: #a0aec0;">N/A</span>';
             }
-            return String(value);
-        }
-        
-        function formatTomcatActive(value) {
-            if (value === 1 || value === '1' || value === true) {
-                return '<span class="status-success">활성</span>';
-            } else {
-                return '<span class="status-error">비활성</span>';
+            
+            const valueStr = String(value);
+            
+            // 상태 컬럼
+            if (columnName === '상태') {
+                return formatStatus(valueStr);
             }
+            
+            // 설치 확인 컬럼
+            if (columnName === '설치확인') {
+                if (valueStr.includes('✓') || valueStr.toUpperCase().includes('INSTALLED')) {
+                    return '<span class="status-success">' + valueStr + '</span>';
+                } else {
+                    return '<span class="status-error">' + valueStr + '</span>';
+                }
+            }
+            
+            // 리스너 포트 컬럼
+            if (columnName.includes('리스너')) {
+                if (valueStr.includes('LISTENING') || valueStr.includes('LISTEN')) {
+                    return '<span class="status-success">' + valueStr + '</span>';
+                } else {
+                    return '<span class="status-error">' + valueStr + '</span>';
+                }
+            }
+            
+            // 서비스 상태 컬럼
+            if (columnName === '서비스상태') {
+                if (valueStr.toLowerCase().includes('active') || valueStr.toLowerCase().includes('running')) {
+                    return '<span class="status-success">' + valueStr + '</span>';
+                } else {
+                    return '<span class="status-error">' + valueStr + '</span>';
+                }
+            }
+            
+            // 긴 텍스트는 잘라서 표시
+            if (valueStr.length > 50) {
+                return `<span title="${valueStr}">${valueStr.substring(0, 47)}...</span>`;
+            }
+            
+            return valueStr;
         }
         
         function formatStatus(status) {
@@ -937,16 +1041,6 @@
                 return '<span class="status-warning">' + status + '</span>';
             }
             return status;
-        }
-        
-        function formatDate(dateStr) {
-            if (!dateStr) return 'N/A';
-            try {
-                const date = new Date(dateStr);
-                return date.toLocaleString('ko-KR');
-            } catch (e) {
-                return dateStr;
-            }
         }
         
         // WebSocket 연결
@@ -993,26 +1087,34 @@
         
         function displayErrorDetails(data) {
             const modalBody = document.getElementById('modalBody');
-            const results = data.results || {};
             
             let html = '';
             
-            // 기본 정보
+            // 기본 정보 (format_was_result로 변환된 데이터 사용)
             html += '<div class="detail-section">';
             html += '<h3>📋 기본 정보</h3>';
-            html += `<div class="detail-item"><div class="detail-item-label">점검 유형</div><div class="detail-item-value">WAS</div></div>`;
-            html += `<div class="detail-item"><div class="detail-item-label">호스트명</div><div class="detail-item-value">${data.hostname || 'N/A'}</div></div>`;
-            html += `<div class="detail-item"><div class="detail-item-label">점검 시간</div><div class="detail-item-value">${data.check_time || 'N/A'}</div></div>`;
-            html += `<div class="detail-item"><div class="detail-item-label">담당자</div><div class="detail-item-value">${data.checker || 'N/A'}</div></div>`;
-            html += `<div class="detail-item ${data.status && data.status.toLowerCase().includes('error') ? 'error-highlight' : 'success-highlight'}"><div class="detail-item-label">상태</div><div class="detail-item-value">${data.status || 'N/A'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">점검 유형</div><div class="detail-item-value">${data.점검유형 || data.check_type || 'WAS'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">호스트명</div><div class="detail-item-value">${data.호스트명 || data.hostname || 'N/A'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">점검 시간</div><div class="detail-item-value">${data.점검시간 || data.check_time || 'N/A'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">담당자</div><div class="detail-item-value">${data.담당자 || data.checker || 'N/A'}</div></div>`;
+            const status = data.상태 || data.status || 'N/A';
+            const statusLower = String(status).toLowerCase();
+            const statusClass = statusLower.includes('error') || statusLower.includes('x') ? 'error-highlight' : 'success-highlight';
+            html += `<div class="detail-item ${statusClass}"><div class="detail-item-label">상태</div><div class="detail-item-value">${status}</div></div>`;
             html += '</div>';
             
-            // 점검 결과 상세
+            // 점검 결과 상세 (format_was_result로 변환된 모든 필드 표시)
             html += '<div class="detail-section">';
             html += '<h3>🔍 점검 결과 상세</h3>';
             
-            // results 객체의 모든 항목 표시
-            for (const [key, value] of Object.entries(results)) {
+            // format_was_result로 변환된 데이터의 모든 항목 표시
+            const excludeKeys = ['id', 'check_type', 'hostname', 'check_time', 'checker', 'status', 'created_at', 'results'];
+            for (const [key, value] of Object.entries(data)) {
+                // 기본 정보는 이미 표시했으므로 제외
+                if (excludeKeys.includes(key) || key === '점검유형' || key === '호스트명' || key === '점검시간' || key === '담당자' || key === '상태') {
+                    continue;
+                }
+                
                 let displayValue = '';
                 let isError = false;
                 
