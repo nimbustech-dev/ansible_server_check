@@ -1,7 +1,7 @@
 ---
 - name: "Redhat OS 점검 및 API 전송"
   hosts: all
-  become: yes
+  become: no
   gather_facts: yes
 
   # API 설정 파일 로드 (없어도 기본값 사용)

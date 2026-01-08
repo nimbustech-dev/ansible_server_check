@@ -379,4 +379,6 @@
   template:
     src: report.j2
     dest: /tmp/tomcat_check_report.txt
+  failed_when: false
+  ignore_errors: yes
 
