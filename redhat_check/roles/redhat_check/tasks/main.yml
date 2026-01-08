@@ -71,6 +71,8 @@
   template:
     src: report.j2
     dest: /tmp/redhat_os_check_report.txt
+  failed_when: false
+  ignore_errors: yes
 
 # 점검 결과를 하나의 딕셔너리로 정리
 - name: Aggregate Redhat OS check results
