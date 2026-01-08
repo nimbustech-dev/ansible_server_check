@@ -11,13 +11,33 @@
             padding: 0;
             box-sizing: border-box;
         }
+
+        :root {
+            --bg: #f5f7fb;
+            --panel: #ffffff;
+            --border: #e5e7eb;
+            --text: #0f172a;
+            --muted: #64748b;
+            --primary: #1e3a8a;
+            --primary-2: #3b82f6;
+            --success: #16a34a;
+            --shadow: 0 14px 40px rgba(15, 23, 42, 0.10);
+            --shadow-sm: 0 6px 18px rgba(15, 23, 42, 0.08);
+            --radius: 14px;
+            --table-head: #0b1220;
+        }
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background:
+                radial-gradient(1100px circle at 12% 0%, rgba(30, 58, 138, 0.10), transparent 55%),
+                radial-gradient(900px circle at 88% 20%, rgba(59, 130, 246, 0.10), transparent 55%),
+                var(--bg);
             min-height: 100vh;
             padding: 20px;
-            color: #333;
+            color: var(--text);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
         
         .dashboard-container {
@@ -99,7 +119,7 @@
         }
         
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
             color: white;
         }
         
@@ -238,7 +258,7 @@
         .filter-group select:focus,
         .filter-group input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #1e3a8a;
         }
         
         .table-section {
@@ -264,10 +284,12 @@
         .table-scrollbar-top {
             width: 100%;
             height: 20px;
-            overflow-x: auto;
+            overflow-x: scroll; /* 항상 스크롤바 표시 */
             overflow-y: hidden;
             margin-bottom: 10px;
             border-radius: 8px;
+            background: #f8f9fa;
+            display: block;
         }
         
         .table-scrollbar-top::-webkit-scrollbar {
@@ -275,21 +297,24 @@
         }
         
         .table-scrollbar-top::-webkit-scrollbar-track {
-            background: #f1f1f1;
+            background: #e9ecef;
             border-radius: 6px;
         }
         
         .table-scrollbar-top::-webkit-scrollbar-thumb {
-            background: #667eea;
+            background: #1e3a8a;
             border-radius: 6px;
+            border: 2px solid #e9ecef;
         }
         
         .table-scrollbar-top::-webkit-scrollbar-thumb:hover {
-            background: #5568d3;
+            background: #3b82f6;
+            cursor: pointer;
         }
         
         .table-scrollbar-top-content {
             height: 1px;
+            min-width: 100%;
         }
         
         .table-wrapper {
@@ -315,7 +340,7 @@
         }
         
         thead {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
             color: white;
             position: sticky;
             top: 0;
@@ -560,7 +585,7 @@
             padding: 12px;
             background: #f7fafc;
             border-radius: 6px;
-            border-left: 3px solid #667eea;
+            border-left: 3px solid #1e3a8a;
         }
         
         .detail-item-label {
@@ -592,16 +617,81 @@
             background: #c6f6d5;
             border-left-color: #48bb78;
         }
+
+        /* ==========================
+           Chic theme overrides
+           - 기존 기능/레이아웃 유지
+           ========================== */
+        .header,
+        .stat-card,
+        .chart-card,
+        .filter-section,
+        .table-section {
+            background: var(--panel) !important;
+            border: 1px solid var(--border) !important;
+            box-shadow: var(--shadow) !important;
+            border-radius: var(--radius) !important;
+            backdrop-filter: none !important;
+        }
+
+        .header h1 {
+            color: var(--text) !important;
+            letter-spacing: -0.02em;
+        }
+
+        .header-info,
+        .filter-group label {
+            color: var(--muted) !important;
+        }
+
+        .status-indicator {
+            background: var(--success) !important;
+            animation: none !important;
+            box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.14);
+        }
+
+        .btn {
+            border-radius: 10px !important;
+            border: 1px solid var(--border) !important;
+            box-shadow: none !important;
+        }
+
+        .btn-primary {
+            background: var(--primary) !important;
+            color: #fff !important;
+        }
+
+        .btn-primary:hover {
+            transform: none !important;
+            box-shadow: none !important;
+            background: #163075 !important;
+        }
+
+        .btn-secondary {
+            background: #f1f5f9 !important;
+            color: var(--text) !important;
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0 !important;
+        }
+
+        thead {
+            background: var(--table-head) !important;
+        }
+
+        th {
+            text-transform: none !important;
+            letter-spacing: 0 !important;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
     <div class="dashboard-container">
         <div class="header">
             <div class="header-left">
-                <h1>
-                    <span>📊</span>
-                    DB 점검 결과 모니터링 대시보드
-                </h1>
+                <h1>DB 점검 결과 모니터링 대시보드</h1>
                 <div class="header-info" id="headerInfo">
                     <span><span class="status-indicator"></span> 실시간 모니터링</span>
                     <span>총 0건</span>
@@ -610,9 +700,7 @@
                 </div>
             </div>
             <div class="controls">
-                <button class="btn btn-primary" onclick="loadData()">
-                    <span>🔄</span> 새로고침
-                </button>
+                <button class="btn btn-primary" onclick="loadData()">새로고침</button>
             </div>
         </div>
         
@@ -641,21 +729,21 @@
         
         <div class="charts-section">
             <div class="chart-card">
-                <h3>📈 점검 유형별 분포</h3>
+                <h3>점검 유형별 분포</h3>
                 <canvas id="typeChart"></canvas>
             </div>
             <div class="chart-card">
-                <h3>📊 상태별 분포</h3>
+                <h3>상태별 분포</h3>
                 <canvas id="statusChart"></canvas>
             </div>
             <div class="chart-card">
-                <h3>📅 일별 점검 추이</h3>
+                <h3>일별 점검 추이</h3>
                 <canvas id="trendChart"></canvas>
             </div>
         </div>
         
         <div class="filter-section">
-            <h3>🔍 필터</h3>
+            <h3>필터</h3>
             <div class="filter-row">
                 <div class="filter-group">
                     <label>점검 유형</label>
@@ -695,7 +783,7 @@
         </div>
         
         <div class="table-section">
-            <h3>📋 상세 점검 결과</h3>
+            <h3>상세 점검 결과</h3>
             <div class="table-scroll-container">
                 <div class="table-scrollbar-top" id="topScrollbar">
                     <div class="table-scrollbar-top-content" id="topScrollbarContent"></div>
@@ -711,7 +799,7 @@
     <div class="modal-overlay" id="errorModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>🔍 점검 상세 정보</h2>
+                <h2>점검 상세 정보</h2>
                 <button class="modal-close" onclick="closeErrorModal()">&times;</button>
             </div>
             <div class="modal-body" id="modalBody">
@@ -788,7 +876,7 @@
                     datasets: [{
                         label: '점검 수',
                         data: [],
-                        borderColor: '#667eea',
+                        borderColor: '#1e3a8a',
                         backgroundColor: 'rgba(102, 126, 234, 0.1)',
                         tension: 0.4,
                         fill: true
@@ -1007,7 +1095,8 @@
             syncScrollbars();
         }
         
-        // 스크롤 바 동기화 함수
+        // 스크롤 바 동기화 함수 (이벤트 리스너 중복 방지)
+        let scrollbarSyncInitialized = false;
         function syncScrollbars() {
             const tableWrapper = document.getElementById('tableWrapper');
             const topScrollbar = document.getElementById('topScrollbar');
@@ -1015,21 +1104,40 @@
             
             if (!tableWrapper || !topScrollbar || !topScrollbarContent) return;
             
-            // 테이블의 실제 너비를 가져와서 상단 스크롤 바 컨텐츠 너비 설정
-            const table = tableWrapper.querySelector('table');
-            if (table) {
-                const tableWidth = table.offsetWidth;
-                topScrollbarContent.style.width = tableWidth + 'px';
-                
-                // 테이블 스크롤과 상단 스크롤 바 동기화
-                tableWrapper.addEventListener('scroll', function() {
-                    topScrollbar.scrollLeft = tableWrapper.scrollLeft;
-                });
-                
-                topScrollbar.addEventListener('scroll', function() {
-                    tableWrapper.scrollLeft = topScrollbar.scrollLeft;
-                });
-            }
+            // 테이블이 렌더링될 때까지 약간의 지연
+            setTimeout(() => {
+                const table = tableWrapper.querySelector('table');
+                if (table) {
+                    const tableWidth = table.offsetWidth;
+                    const wrapperWidth = tableWrapper.clientWidth;
+                    
+                    // 스크롤바는 항상 표시하되, 핸들이 확실히 보이도록 최소 1px 오버플로우 보장
+                    topScrollbar.style.display = 'block';
+                    topScrollbarContent.style.width = Math.max(tableWidth, wrapperWidth + 1) + 'px';
+                    
+                    // 이벤트 리스너는 한 번만 추가
+                    if (!scrollbarSyncInitialized) {
+                        // 기존 리스너 제거 후 새로 추가 (중복 방지)
+                        const scrollHandler = function() {
+                            topScrollbar.scrollLeft = tableWrapper.scrollLeft;
+                        };
+                        const scrollbarHandler = function() {
+                            tableWrapper.scrollLeft = topScrollbar.scrollLeft;
+                        };
+                        
+                        tableWrapper.removeEventListener('scroll', scrollHandler);
+                        topScrollbar.removeEventListener('scroll', scrollbarHandler);
+                        
+                        tableWrapper.addEventListener('scroll', scrollHandler);
+                        topScrollbar.addEventListener('scroll', scrollbarHandler);
+                        scrollbarSyncInitialized = true;
+                    }
+                } else {
+                    // 테이블이 없으면 스크롤바 숨김
+                    topScrollbarContent.style.width = '0px';
+                    topScrollbar.style.display = 'none';
+                }
+            }, 150);
         }
         
         // 셀 포맷팅
@@ -1150,7 +1258,7 @@
             
             // 기본 정보
             html += '<div class="detail-section">';
-            html += '<h3>📋 기본 정보</h3>';
+            html += '<h3>기본 정보</h3>';
             html += `<div class="detail-item"><div class="detail-item-label">점검 유형</div><div class="detail-item-value">${checkType.toUpperCase()}</div></div>`;
             html += `<div class="detail-item"><div class="detail-item-label">호스트명</div><div class="detail-item-value">${data.hostname || data.호스트명 || 'N/A'}</div></div>`;
             html += `<div class="detail-item"><div class="detail-item-label">점검 시간</div><div class="detail-item-value">${data.check_time || data.점검시간 || 'N/A'}</div></div>`;
@@ -1160,7 +1268,7 @@
             
             // 점검 결과 상세
             html += '<div class="detail-section">';
-            html += '<h3>🔍 점검 결과 상세</h3>';
+            html += '<h3>점검 결과 상세</h3>';
             
             // results 객체의 모든 항목 표시
             for (const [key, value] of Object.entries(results)) {

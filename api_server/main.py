@@ -1136,6 +1136,39 @@ async def was_checks_report():
         return HTMLResponse(content=error_html, status_code=500)
 
 
+@app.get("/api/report", response_class=HTMLResponse)
+async def unified_report():
+    """
+    통합 점검 결과 리포트 - DB, OS, WAS를 탭으로 통합
+    
+    Returns:
+        HTML 형식의 통합 리포트
+    """
+    try:
+        import os
+        template_path = os.path.join(os.path.dirname(__file__), "unified_report_template.html")
+        with open(template_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        
+        return HTMLResponse(content=html)
+        
+    except Exception as e:
+        error_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>오류</title>
+        </head>
+        <body>
+            <h1>오류 발생</h1>
+            <p>{str(e)}</p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=error_html, status_code=500)
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket 엔드포인트 - 실시간 업데이트"""
