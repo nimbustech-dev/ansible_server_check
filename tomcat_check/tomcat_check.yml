@@ -11,6 +11,21 @@
         file: ../config/api_config.yml
       failed_when: false
       ignore_errors: yes
+    
+    # 실행 PC의 호스트명 가져오기 (호스트명 자동 설정용)
+    - name: Get local machine hostname
+      shell: hostname
+      register: local_hostname
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+      failed_when: false
+    
+    # 실행 PC에 따라 호스트명 자동 설정
+    - name: Set hostname based on execution PC
+      set_fact:
+        auto_hostname: "{{ 'Taehwan' if 'DESKTOP-JAC7QHN' in local_hostname.stdout else ('Hana-PC' if 'Hana' in local_hostname.stdout or 'hana' in local_hostname.stdout else inventory_hostname) }}"
+      run_once: true
   
   vars:
     # config 파일이 없을 경우 기본값
@@ -29,6 +44,7 @@
       vars:
         check_type: "was"
         checker_name: "이수민"
+        hostname: "{{ auto_hostname | default(inventory_hostname) }}"
         check_results:
           installation:
             installed: "{{ tomcat_installation.stdout | default('N/A') }}"

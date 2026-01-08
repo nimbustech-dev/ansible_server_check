@@ -61,6 +61,7 @@
       vars:
         check_type: "cubrid"
         checker_name: "성태환"
+        hostname: "Taehwan"
         check_results:
           installation:
             cubrid_home: "{{ cubrid_home }}"
