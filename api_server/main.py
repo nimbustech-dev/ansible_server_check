@@ -149,277 +149,6 @@ async def create_check_result(check_result: CheckResultRequest):
         )
 
 
-def format_was_result(result: Dict[str, Any]) -> Dict[str, Any]:
-    """WAS 점검 결과를 DB 리포트와 동일한 형식으로 정리"""
-    check_type = result.get("check_type", "")
-    results = result.get("results", {})
-    
-    # 기본 정보 (5개)
-    formatted = {
-        "id": result.get("id"),
-        "점검유형": check_type.upper(),
-        "호스트명": result.get("hostname", "N/A"),
-        "점검시간": result.get("check_time", "N/A"),
-        "담당자": result.get("checker", "N/A"),
-        "상태": result.get("status", "N/A"),
-    }
-    
-    # WAS 점검 결과 파싱
-    installation = results.get("installation", {})
-    service_status = results.get("service_status", {})
-    listener = results.get("listener", {})
-    os_resources = results.get("os_resources", {})
-    applications = results.get("applications", {})
-    configuration = results.get("configuration", {})
-    logs = results.get("logs", {})
-    process = results.get("process", {})
-    filesystem_usage = results.get("filesystem_usage", {})
-    directory_structure = results.get("directory_structure", "N/A")
-    
-    # 설치 정보 (2개)
-    installation_status = "✗"
-    installation_path = "N/A"
-    try:
-        installed_str = str(installation.get("installed", "")).strip()
-        if "\n" in installed_str:
-            installed_str = installed_str.split("\n")[0]
-        if installed_str.upper() == "INSTALLED":
-            installation_status = "✓"
-        installation_path = installation.get("catalina_home", installation.get("binary_path", "N/A"))
-        if isinstance(installation_path, str) and len(installation_path) > 40:
-            installation_path = installation_path[:40] + "..."
-    except:
-        pass
-    
-    # 메모리 정보 파싱
-    memory_total = "N/A"
-    memory_used = "N/A"
-    memory_available = "N/A"
-    try:
-        mem_data = os_resources.get("memory", {})
-        if isinstance(mem_data, dict):
-            mem_str = mem_data.get("detail", "")
-        else:
-            mem_str = str(mem_data)
-        if isinstance(mem_str, str) and "\n" in mem_str:
-            lines = mem_str.split("\n")
-            if len(lines) > 1:
-                parts = lines[1].split()
-                if len(parts) >= 2:
-                    memory_total = parts[1]
-                    memory_used = parts[2] if len(parts) > 2 else "N/A"
-                    memory_available = parts[6] if len(parts) > 6 else "N/A"
-    except:
-        pass
-    
-    # CPU 정보 파싱
-    cpu_info = "N/A"
-    cpu_percent = "N/A"
-    try:
-        cpu_data = os_resources.get("cpu", {})
-        if isinstance(cpu_data, dict):
-            cpu_str = cpu_data.get("detail", "")
-            cpu_percent = cpu_data.get("usage_percent", "N/A")
-            if isinstance(cpu_str, str):
-                if "%Cpu" in cpu_str:
-                    cpu_info = cpu_str.split("%Cpu")[1].strip()[:50] if "%Cpu" in cpu_str else "N/A"
-        elif isinstance(cpu_data, str):
-            cpu_info = cpu_data[:50]
-    except:
-        pass
-    
-    # OS 기초 체력 점검 항목 파싱
-    os_basics = results.get("os_basics", {})
-    cpu_model = os_basics.get("cpu_model_name", "N/A")
-    
-    # Swap 상태 파싱
-    swap_status_display = "N/A"
-    try:
-        swap_str = os_basics.get("swap_status", "")
-        if isinstance(swap_str, str) and swap_str.strip():
-            parts = swap_str.split()
-            if len(parts) >= 3:
-                swap_status_display = f"{parts[1]} / {parts[2]}"
-    except:
-        pass
-    
-    # 루트 디스크 사용률
-    root_disk_usage = os_basics.get("root_disk_usage", "N/A")
-    root_disk_display = f"{root_disk_usage}%" if root_disk_usage != "N/A" and isinstance(root_disk_usage, str) and root_disk_usage.isdigit() else root_disk_usage
-    
-    # 전체 디스크 사용 현황 요약
-    all_disk_summary = "N/A"
-    try:
-        all_disk_str = os_basics.get("all_disk_usage", "")
-        if isinstance(all_disk_str, str) and all_disk_str.strip():
-            lines = all_disk_str.split("\n")
-            high_usage_count = 0
-            for line in lines[1:]:
-                if "%" in line and "Use%" not in line:
-                    parts = line.split()
-                    for part in parts:
-                        if part.endswith("%") and part != "Use%":
-                            try:
-                                usage = int(part.replace("%", ""))
-                                if usage >= 70:
-                                    high_usage_count += 1
-                            except (ValueError, AttributeError):
-                                pass
-            if high_usage_count > 0:
-                all_disk_summary = f"{high_usage_count}개 디스크 70% 이상"
-            else:
-                all_disk_summary = "정상"
-    except Exception:
-        pass
-    
-    # 네트워크 통신 상태
-    network_status = "N/A"
-    try:
-        ping_result = os_basics.get("network_ping_result", "")
-        if isinstance(ping_result, str):
-            if "0% packet loss" in ping_result or "0 received" not in ping_result:
-                network_status = "✓ 연결됨"
-            else:
-                network_status = "✗ 연결실패"
-    except:
-        pass
-    
-    # NTP 동기화 상태
-    ntp_status = "N/A"
-    try:
-        ntp_str = os_basics.get("ntp_sync_status", "")
-        if isinstance(ntp_str, str):
-            if "NTP not configured" in ntp_str:
-                ntp_status = "미설정"
-            elif "*" in ntp_str or "^*" in ntp_str:
-                ntp_status = "✓ 동기화됨"
-            else:
-                ntp_status = "설정됨"
-    except:
-        pass
-    
-    # CPU/메모리 상위 프로세스 파싱
-    cpu_top = "N/A"
-    mem_top = "N/A"
-    try:
-        cpu_top_str = os_resources.get("cpu_top_processes", "")
-        mem_top_str = os_resources.get("mem_top_processes", "")
-        if isinstance(cpu_top_str, str) and cpu_top_str.strip() and cpu_top_str != "N/A":
-            cpu_top = "있음"
-        if isinstance(mem_top_str, str) and mem_top_str.strip() and mem_top_str != "N/A":
-            mem_top = "있음"
-    except:
-        pass
-    
-    # 프로세스 수
-    process_count = os_resources.get("process_count", "N/A")
-    
-    # 리스너 포트 파싱
-    listener_8080 = "NOT LISTENING"
-    listener_8005 = "NOT LISTENING"
-    listener_8009 = "NOT LISTENING"
-    try:
-        port_8080 = listener.get("port_8080", "")
-        port_8005 = listener.get("port_8005", "")
-        port_8009 = listener.get("port_8009", "")
-        if isinstance(port_8080, str) and ("LISTEN" in port_8080 or "LISTENING" in port_8080):
-            listener_8080 = "LISTENING"
-        if isinstance(port_8005, str) and ("LISTEN" in port_8005 or "LISTENING" in port_8005):
-            listener_8005 = "LISTENING"
-        if isinstance(port_8009, str) and ("LISTEN" in port_8009 or "LISTENING" in port_8009):
-            listener_8009 = "LISTENING"
-    except:
-        pass
-    
-    # 서비스 상태
-    service_active = service_status.get("active", "N/A")
-    service_substate = service_status.get("substate", "N/A")
-    service_status_display = f"{service_active}/{service_substate}"
-    
-    # 애플리케이션 정보
-    app_count = applications.get("app_count", "N/A")
-    deployed_apps = applications.get("deployed_apps", "N/A")
-    app_list_display = "N/A"
-    try:
-        if isinstance(deployed_apps, str) and deployed_apps.strip() and deployed_apps != "N/A":
-            app_list_display = deployed_apps[:50] + "..." if len(deployed_apps) > 50 else deployed_apps
-        else:
-            app_list_display = "없음"
-    except:
-        pass
-    
-    # 설정 정보
-    max_heap = configuration.get("max_heap", "N/A")
-    
-    # 로그 정보
-    access_log_errors = logs.get("access_log_error_count", "N/A")
-    
-    # 디렉토리 구조
-    dir_structure_display = "있음"
-    try:
-        if isinstance(directory_structure, str):
-            if "not found" in directory_structure.lower() or "not present" in directory_structure.lower():
-                dir_structure_display = "없음"
-    except:
-        pass
-    
-    # 파일시스템
-    filesystem_display = "있음"
-    try:
-        if isinstance(filesystem_usage, dict):
-            has_fs = False
-            for key in ["catalina_home", "catalina_base", "logs", "temp"]:
-                fs_str = filesystem_usage.get(key, "")
-                if isinstance(fs_str, str) and fs_str.strip() and "not found" not in fs_str.lower():
-                    has_fs = True
-                    break
-            if not has_fs:
-                filesystem_display = "없음"
-    except:
-        pass
-    
-    # 공통 항목 (19개) + WAS 전용 항목 (12개) = 총 31개
-    formatted.update({
-        # 설치 정보 (2개)
-        "설치확인": installation_status,
-        "설치경로": str(installation_path)[:40],
-        
-        # OS 기초 체력 (6개)
-        "CPU모델명": cpu_model[:50] if cpu_model != "N/A" else "N/A",
-        "Swap상태": swap_status_display,
-        "루트디스크사용률": root_disk_display,
-        "디스크사용현황": all_disk_summary,
-        "네트워크통신": network_status,
-        "NTP동기화": ntp_status,
-        
-        # OS 리소스 (2개)
-        "CPU상위프로세스": cpu_top,
-        "메모리상위프로세스": mem_top,
-        
-        # 공통 정보 (4개) - WAS에서는 애플리케이션 정보로 대체
-        "프로세스수": process_count,
-        "데이터베이스수": app_count,  # 애플리케이션 수
-        "데이터베이스목록": app_list_display,  # 애플리케이션 목록
-        "테이블스페이스": app_list_display,  # 애플리케이션 목록
-        
-        # WAS 전용 항목 (12개)
-        "디렉토리구조": dir_structure_display,
-        "파일시스템": filesystem_display,
-        "서비스상태": service_status_display,
-        "리스너(8080)": listener_8080,
-        "리스너(8005)": listener_8005,
-        "리스너(8009)": listener_8009,
-        "메모리(Total)": memory_total,
-        "메모리(Used)": memory_used,
-        "메모리(Available)": memory_available,
-        "CPU사용률": cpu_percent,
-        "최대힙메모리": max_heap,
-        "접속로그에러수": access_log_errors,
-    })
-    
-    return formatted
-
-
 @app.get("/api/checks")
 async def list_check_results(
     check_type: Optional[str] = None,
@@ -440,36 +169,12 @@ async def list_check_results(
         점검 결과 목록
     """
     try:
-        # WAS 타입 조회 시 tomcat 타입도 함께 조회 (하위 호환성)
-        if check_type == "was":
-            # was와 tomcat 타입 모두 조회
-            was_results = get_check_results(
-                check_type="was",
-                hostname=hostname,
-                checker=checker,
-                limit=limit
-            )
-            tomcat_results = get_check_results(
-                check_type="tomcat",
-                hostname=hostname,
-                checker=checker,
-                limit=limit
-            )
-            # 두 결과 합치기
-            results = was_results + tomcat_results
-            # 최신순 정렬 및 제한
-            results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-            results = results[:limit]
-            # WAS 형식으로 변환
-            results = [format_was_result(result) for result in results]
-        else:
-            results = get_check_results(
-                check_type=check_type,
-                hostname=hostname,
-                checker=checker,
-                limit=limit
-            )
-        
+        results = get_check_results(
+            check_type=check_type,
+            hostname=hostname,
+            checker=checker,
+            limit=limit
+        )
         return {
             "success": True,
             "count": len(results),
@@ -1409,6 +1114,39 @@ async def was_checks_report():
     try:
         import os
         template_path = os.path.join(os.path.dirname(__file__), "was_report_template.html")
+        with open(template_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        
+        return HTMLResponse(content=html)
+        
+    except Exception as e:
+        error_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>오류</title>
+        </head>
+        <body>
+            <h1>오류 발생</h1>
+            <p>{str(e)}</p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=error_html, status_code=500)
+
+
+@app.get("/api/report", response_class=HTMLResponse)
+async def unified_report():
+    """
+    통합 점검 결과 리포트 - DB, OS, WAS를 탭으로 통합
+    
+    Returns:
+        HTML 형식의 통합 리포트
+    """
+    try:
+        import os
+        template_path = os.path.join(os.path.dirname(__file__), "unified_report_template.html")
         with open(template_path, "r", encoding="utf-8") as f:
             html = f.read()
         
