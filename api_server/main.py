@@ -971,7 +971,146 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "네트워크통신": network_status,
             "NTP동기화": ntp_status,
         })
-    
+
+    elif check_type == "os":
+        # OS 점검 결과 정리 (DB/OS 공통 컬럼 스키마에 맞춤)
+        cpu = results.get("cpu", {})
+        memory = results.get("memory", {})
+        disk = results.get("disk", {})
+        network = results.get("network", {})
+        ntp = results.get("ntp", {})
+
+        # CPU 모델명
+        cpu_model = "N/A"
+        try:
+            if isinstance(cpu, dict):
+                cpu_model = cpu.get("model", "N/A")
+            elif isinstance(cpu, str):
+                cpu_model = cpu
+        except:
+            pass
+
+        # Swap 상태 (예: "Swap: 2.0Gi 0B 2.0Gi" → "2.0Gi / 0B")
+        swap_status_display = "N/A"
+        try:
+            if isinstance(memory, dict):
+                swap_str = memory.get("swap", "")
+                if isinstance(swap_str, str) and swap_str.strip():
+                    parts = swap_str.split()
+                    if len(parts) >= 3:
+                        swap_status_display = f"{parts[1]} / {parts[2]}"
+        except:
+            pass
+
+        # 루트 디스크 사용률
+        root_disk_usage = "N/A"
+        try:
+            if isinstance(disk, dict):
+                root_disk_usage = disk.get("root_usage_percent", "N/A")
+        except:
+            pass
+        if isinstance(root_disk_usage, str) and root_disk_usage.isdigit():
+            root_disk_display = f"{root_disk_usage}%"
+        else:
+            root_disk_display = root_disk_usage
+
+        # 전체 디스크 사용 현황 요약 (간단히 high-level 요약만)
+        all_disk_summary = "N/A"
+        try:
+            if isinstance(disk, dict):
+                all_disk_str = disk.get("all", "")
+                if isinstance(all_disk_str, str) and all_disk_str.strip():
+                    # 70% 이상 사용 중인 디스크 수 계산
+                    lines = all_disk_str.split("\n")
+                    high_usage_count = 0
+                    for line in lines[1:]:
+                        if "%" in line and "Use%" not in line:
+                            parts = line.split()
+                            for part in parts:
+                                if part.endswith("%") and part != "Use%":
+                                    try:
+                                        usage = int(part.replace("%", ""))
+                                        if usage >= 70:
+                                            high_usage_count += 1
+                                    except (ValueError, AttributeError):
+                                        pass
+                    if high_usage_count > 0:
+                        all_disk_summary = f"{high_usage_count}개 디스크 70% 이상"
+                    else:
+                        all_disk_summary = "정상"
+        except:
+            pass
+
+        # 네트워크 통신 상태
+        network_status = "N/A"
+        try:
+            if isinstance(network, dict):
+                ping_result = network.get("ping_result", "")
+                if isinstance(ping_result, str):
+                    if "0% packet loss" in ping_result:
+                        network_status = "✓ 연결됨"
+                    elif "packet loss" in ping_result:
+                        network_status = "✗ 연결실패"
+                    else:
+                        network_status = ping_result[:50]
+        except:
+            pass
+
+        # NTP 동기화 상태
+        ntp_status = "N/A"
+        try:
+            if isinstance(ntp, dict):
+                ntp_str = ntp.get("status", "")
+                if isinstance(ntp_str, str):
+                    if "NTP not configured" in ntp_str:
+                        ntp_status = "미설정"
+                    elif "*" in ntp_str or "^*" in ntp_str:
+                        ntp_status = "✓ 동기화됨"
+                    else:
+                        ntp_status = "설정됨"
+        except:
+            pass
+
+        # CPU/메모리 상위 프로세스
+        cpu_top = "N/A"
+        mem_top = "N/A"
+        try:
+            if isinstance(cpu, dict):
+                cpu_top_str = cpu.get("top_processes", "")
+                if isinstance(cpu_top_str, str) and cpu_top_str.strip() and cpu_top_str != "N/A":
+                    cpu_top = "있음"
+            if isinstance(memory, dict):
+                mem_top_str = memory.get("top_processes", "")
+                if isinstance(mem_top_str, str) and mem_top_str.strip() and mem_top_str != "N/A":
+                    mem_top = "있음"
+        except:
+            pass
+
+        # OS용 포맷 결과 (DB와 동일한 공통 19개 컬럼 구조 맞추기)
+        formatted.update({
+            # 설치 정보 (OS는 별도 설치 개념이 없으므로 N/A)
+            "설치확인": "N/A",
+            "설치경로": "N/A",
+
+            # OS 기초 체력
+            "CPU모델명": cpu_model[:50] if isinstance(cpu_model, str) else "N/A",
+            "Swap상태": swap_status_display,
+            "루트디스크사용률": root_disk_display,
+            "디스크사용현황": all_disk_summary,
+            "네트워크통신": network_status,
+            "NTP동기화": ntp_status,
+
+            # OS 리소스
+            "CPU상위프로세스": cpu_top,
+            "메모리상위프로세스": mem_top,
+
+            # 공통 DB 정보 (OS는 DB가 없으므로 N/A)
+            "프로세스수": "N/A",
+            "데이터베이스수": "N/A",
+            "데이터베이스목록": "N/A",
+            "테이블스페이스": "N/A",
+        })
+
     elif check_type == "cubrid":
         # CUBRID 점검 결과 정리
         installation = results.get("installation", {})
@@ -1329,24 +1468,18 @@ async def get_db_checks_data(limit: int = 100):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/was-checks/data")
-async def get_was_checks_data(limit: int = 1000):
-    """WAS 점검 결과를 JSON 형식으로 반환 (차트/필터링용)"""
+@app.get("/api/os-checks/data")
+async def get_os_checks_data(limit: int = 100):
+    """OS 점검 결과를 JSON 형식으로 반환 (DB/OS 공통 테이블용)"""
     try:
-        # was와 tomcat 타입 모두 조회
-        was_results = get_check_results(check_type="was", limit=limit)
-        tomcat_results = get_check_results(check_type="tomcat", limit=limit)
-        
-        # 두 결과 합치기
-        all_results = was_results + tomcat_results
-        # 최신순 정렬 및 제한
-        all_results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-        formatted_results = [format_was_result(result) for result in all_results[:limit]]
-        
+        results = get_check_results(check_type="os", limit=limit)
+        results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        formatted_results = [format_db_result(result) for result in results[:limit]]
+
         return {
             "success": True,
             "count": len(formatted_results),
-            "results": formatted_results
+            "results": formatted_results,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

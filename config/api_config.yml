@@ -1,7 +1,7 @@
 # API 서버 설정
 # 모든 팀원이 공유하는 설정 파일
 api_server:
-  url: "http://192.168.0.18:8000/api/checks"  # API 서버 주소 (api_server 디렉토리에서 서버 실행 필요)
+  url: "http://localhost:8000/api/checks"  # API 서버 주소 (WSL에서 api_server/main.py 실행)
   timeout: 60  # 동시 점검 시 타임아웃 증가
   retry_count: 5  # 동시 점검 시 재시도 횟수 증가
 
