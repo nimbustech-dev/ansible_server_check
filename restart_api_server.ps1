@@ -66,3 +66,4 @@ Write-Host "   WAS 데이터: http://192.168.0.18:8000/api/was-checks/data" -For
 Write-Host "   WAS 대시보드: http://192.168.0.18:8000/api/was-checks/report" -ForegroundColor Cyan
 Write-Host "`n종료하려면 Ctrl+C를 누르세요." -ForegroundColor Yellow
 
+

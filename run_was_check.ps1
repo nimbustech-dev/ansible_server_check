@@ -19,3 +19,4 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "WSL에서 Ansible이 설치되어 있는지 확인하세요." -ForegroundColor Yellow
 }
 
+

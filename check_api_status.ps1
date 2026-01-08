@@ -44,3 +44,4 @@ Write-Host "   1. API 서버가 실행 중이 아니면 재시작하세요" -For
 Write-Host "   2. 브라우저에서 Ctrl+Shift+R로 강력 새로고침" -ForegroundColor White
 Write-Host "   3. 개발자 도구(F12) → Network 탭에서 요청 확인" -ForegroundColor White
 
+

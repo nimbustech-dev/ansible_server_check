@@ -40,3 +40,4 @@ $HOME/.local/bin/ansible --version
 echo ""
 echo "✅ 설정 완료! 이제 플레이북을 실행할 수 있습니다."
 
+
