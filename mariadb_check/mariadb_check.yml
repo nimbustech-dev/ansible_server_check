@@ -11,6 +11,20 @@
         file: ../config/api_config.yml
       failed_when: false
       ignore_errors: yes
+    
+    # 점검 대상 서버의 호스트명 가져오기
+    - name: Get target server hostname
+      shell: hostname
+      register: target_hostname
+      run_once: true
+      changed_when: false
+      failed_when: false
+    
+    # 호스트명 자동 설정 (로컬 점검 vs 원격 점검 구분)
+    - name: Set hostname based on target server
+      set_fact:
+        auto_hostname: "{{ 'Taehwan' if 'DESKTOP-JAC7QHN' in target_hostname.stdout else ('Hana-PC' if 'Hana' in target_hostname.stdout or 'hana' in target_hostname.stdout else inventory_hostname) }}"
+      run_once: true
   
   vars:
     # config 파일이 없을 경우 기본값
@@ -29,7 +43,7 @@
       vars:
         check_type: "mariadb"
         checker_name: "성태환"
-        hostname: "Taehwan"
+        hostname: "{{ auto_hostname | default(inventory_hostname) }}"
         check_results:
           installation:
             installed: "{{ mariadb_installation.stdout | default('N/A') }}"
