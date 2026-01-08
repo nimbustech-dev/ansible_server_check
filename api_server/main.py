@@ -1033,6 +1033,272 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "NTP동기화": ntp_status,
         })
     
+    elif check_type == "tomcat" or check_type == "was":
+        # WAS(Tomcat) 점검 결과 정리
+        installation = results.get("installation", {})
+        service_status = results.get("service_status", {})
+        listener = results.get("listener", {})
+        os_resources = results.get("os_resources", {})
+        applications = results.get("applications", {})
+        process = results.get("process", {})
+        filesystem_usage = results.get("filesystem_usage", {})
+        directory_structure = results.get("directory_structure", "N/A")
+        configuration = results.get("configuration", {})
+        logs_data = results.get("logs", {})
+        script = results.get("script", {})
+        
+        # 설치 확인 파싱
+        installation_status = "✗"
+        installation_path = "N/A"
+        try:
+            installed_str = str(installation.get("installed", "")).strip()
+            if installed_str.upper() == "INSTALLED":
+                installation_status = "✓"
+            installation_path = installation.get("catalina_home", installation.get("binary_path", "N/A"))
+            if isinstance(installation_path, str):
+                installation_path = installation_path[:40]
+        except:
+            pass
+        
+        # 디렉토리 구조 파싱
+        directory_structure_display = "N/A"
+        try:
+            if isinstance(directory_structure, str) and directory_structure.strip() and directory_structure != "N/A":
+                directory_structure_display = "있음"
+        except:
+            pass
+        
+        # 파일시스템 파싱
+        filesystem_display = "N/A"
+        try:
+            fs_keys = ["catalina_home", "catalina_base", "logs", "temp"]
+            fs_found = False
+            for key in fs_keys:
+                fs_val = filesystem_usage.get(key, "")
+                if isinstance(fs_val, str) and fs_val.strip() and fs_val != "N/A":
+                    fs_found = True
+                    break
+            if fs_found:
+                filesystem_display = "있음"
+        except:
+            pass
+        
+        # 서비스 상태 파싱
+        service_state = "N/A"
+        try:
+            active = service_status.get("active", "")
+            substate = service_status.get("substate", "")
+            if active and substate:
+                service_state = f"{active}/{substate}"
+            elif active:
+                service_state = active
+        except:
+            pass
+        
+        # 리스너 상태 파싱 (8080, 8005, 8009)
+        listener_8080_status = "NOT LISTENING"
+        listener_8005_status = "NOT LISTENING"
+        listener_8009_status = "NOT LISTENING"
+        try:
+            listener_8080 = str(listener.get("port_8080", ""))
+            listener_8005 = str(listener.get("port_8005", ""))
+            listener_8009 = str(listener.get("port_8009", ""))
+            if "LISTEN" in listener_8080:
+                listener_8080_status = "LISTENING"
+            if "LISTEN" in listener_8005:
+                listener_8005_status = "LISTENING"
+            if "LISTEN" in listener_8009:
+                listener_8009_status = "LISTENING"
+        except:
+            pass
+        
+        # 메모리 정보 파싱
+        memory_detail = "N/A"
+        memory_usage_percent = "N/A"
+        try:
+            memory = os_resources.get("memory", {})
+            if isinstance(memory, dict):
+                memory_detail = memory.get("detail", "N/A")
+                memory_usage_percent = memory.get("usage_percent", "N/A")
+            elif isinstance(memory, str):
+                memory_detail = memory
+        except:
+            pass
+        
+        # CPU 정보 파싱
+        cpu_detail = "N/A"
+        cpu_usage_percent = "N/A"
+        try:
+            cpu = os_resources.get("cpu", {})
+            if isinstance(cpu, dict):
+                cpu_detail = cpu.get("detail", "N/A")
+                cpu_usage_percent = cpu.get("usage_percent", "N/A")
+            elif isinstance(cpu, str):
+                cpu_detail = cpu
+        except:
+            pass
+        
+        # 프로세스 정보
+        process_count = os_resources.get("process_count", "N/A")
+        process_running = "N/A"
+        try:
+            running_str = str(process.get("running", "")).upper()
+            if running_str == "YES":
+                process_running = "실행중"
+            elif running_str == "NO":
+                process_running = "정지됨"
+        except:
+            pass
+        
+        # 애플리케이션 정보
+        app_count = applications.get("app_count", "N/A")
+        deployed_apps = applications.get("deployed_apps", "N/A")
+        deployed_apps_display = "N/A"
+        try:
+            if isinstance(deployed_apps, str) and deployed_apps.strip() and deployed_apps != "N/A":
+                # 첫 몇 줄만 표시
+                lines = deployed_apps.split("\n")
+                if len(lines) > 0:
+                    deployed_apps_display = lines[0][:50] + ("..." if len(lines[0]) > 50 else "")
+        except:
+            pass
+        
+        # CPU/메모리 상위 프로세스
+        cpu_top = "N/A"
+        mem_top = "N/A"
+        try:
+            cpu_top_str = os_resources.get("cpu_top_processes", "")
+            mem_top_str = os_resources.get("mem_top_processes", "")
+            if isinstance(cpu_top_str, str) and cpu_top_str.strip() and cpu_top_str != "N/A":
+                cpu_top = "있음"
+            if isinstance(mem_top_str, str) and mem_top_str.strip() and mem_top_str != "N/A":
+                mem_top = "있음"
+        except:
+            pass
+        
+        # 파일시스템 상세 파싱
+        catalina_home_fs = "N/A"
+        catalina_base_fs = "N/A"
+        logs_fs = "N/A"
+        temp_fs = "N/A"
+        try:
+            catalina_home_fs_raw = filesystem_usage.get("catalina_home", "")
+            catalina_base_fs_raw = filesystem_usage.get("catalina_base", "")
+            logs_fs_raw = filesystem_usage.get("logs", "")
+            temp_fs_raw = filesystem_usage.get("temp", "")
+            
+            # df -h 출력에서 사용률 추출
+            if isinstance(catalina_home_fs_raw, str) and "%" in catalina_home_fs_raw:
+                parts = catalina_home_fs_raw.split()
+                for i, part in enumerate(parts):
+                    if part.endswith("%"):
+                        catalina_home_fs = part
+                        break
+            
+            if isinstance(catalina_base_fs_raw, str) and "%" in catalina_base_fs_raw:
+                parts = catalina_base_fs_raw.split()
+                for i, part in enumerate(parts):
+                    if part.endswith("%"):
+                        catalina_base_fs = part
+                        break
+                        
+            if isinstance(logs_fs_raw, str) and "%" in logs_fs_raw:
+                parts = logs_fs_raw.split()
+                for i, part in enumerate(parts):
+                    if part.endswith("%"):
+                        logs_fs = part
+                        break
+                        
+            if isinstance(temp_fs_raw, str) and "%" in temp_fs_raw:
+                parts = temp_fs_raw.split()
+                for i, part in enumerate(parts):
+                    if part.endswith("%"):
+                        temp_fs = part
+                        break
+        except:
+            pass
+        
+        # 설정 정보 파싱
+        server_xml = configuration.get("server_xml", "N/A")
+        java_opts = configuration.get("java_opts", "N/A")
+        max_heap = configuration.get("max_heap", "N/A")
+        
+        server_xml_display = "N/A"
+        try:
+            if isinstance(server_xml, str) and server_xml.strip() and server_xml != "N/A":
+                server_xml_display = "있음" if "not found" not in server_xml.lower() else "없음"
+        except:
+            pass
+        
+        # 로그 정보 파싱
+        catalina_log = logs_data.get("catalina_log", "N/A")
+        error_log = logs_data.get("error_log", "N/A")
+        access_log_error_count = logs_data.get("access_log_error_count", "N/A")
+        
+        catalina_log_display = "N/A"
+        error_log_display = "N/A"
+        try:
+            if isinstance(catalina_log, str) and catalina_log.strip() and catalina_log != "N/A":
+                catalina_log_display = "있음" if "not found" not in catalina_log.lower() else "없음"
+            if isinstance(error_log, str) and error_log.strip() and error_log != "N/A":
+                error_log_display = "있음" if "not found" not in error_log.lower() else "없음"
+        except:
+            pass
+        
+        # 기동 스크립트 날짜
+        startup_script_date = script.get("startup_script_date", "N/A")
+        
+        formatted.update({
+            # 공통 항목 (19개)
+            "설치확인": installation_status,
+            "설치경로": installation_path if isinstance(installation_path, str) else "N/A",
+            "CPU모델명": "N/A",  # OS 점검 항목
+            "Swap상태": "N/A",  # OS 점검 항목
+            "루트디스크사용률": "N/A",  # OS 점검 항목
+            "디스크사용현황": "N/A",  # OS 점검 항목
+            "네트워크통신": "N/A",  # OS 점검 항목
+            "NTP동기화": "N/A",  # OS 점검 항목
+            "CPU상위프로세스": cpu_top,
+            "메모리상위프로세스": mem_top,
+            "프로세스수": str(process_count) if process_count != "N/A" else "N/A",
+            "데이터베이스수": "N/A",  # WAS는 DB 없음
+            "데이터베이스목록": "N/A",  # WAS는 DB 없음
+            "테이블스페이스": "N/A",  # WAS는 테이블스페이스 없음
+            
+            # WAS 전용 항목
+            "디렉토리구조": directory_structure_display,
+            "파일시스템": filesystem_display,
+            "서비스상태": service_state,
+            "리스너(8080)": listener_8080_status,
+            "리스너(8005)": listener_8005_status,
+            "리스너(8009)": listener_8009_status,
+            "메모리(Total)": memory_detail[:50] if isinstance(memory_detail, str) and memory_detail != "N/A" else "N/A",
+            "메모리사용률": memory_usage_percent,
+            "CPU": cpu_detail[:50] if isinstance(cpu_detail, str) and cpu_detail != "N/A" else "N/A",
+            "CPU사용률": cpu_usage_percent,
+            "관리프로세스": process_running,
+            "애플리케이션수": str(app_count) if app_count != "N/A" else "N/A",
+            "애플리케이션목록": deployed_apps_display,
+            "CATALINA_HOME파일시스템": catalina_home_fs,
+            "CATALINA_BASE파일시스템": catalina_base_fs,
+            "로그파일시스템": logs_fs,
+            "임시파일시스템": temp_fs,
+            "server.xml": server_xml_display,
+            "JAVA_OPTS": java_opts[:50] if isinstance(java_opts, str) and java_opts != "N/A" else "N/A",
+            "Max_Heap": max_heap if max_heap != "N/A" else "N/A",
+            "catalina.out": catalina_log_display,
+            "error.log": error_log_display,
+            "접속로그에러수": access_log_error_count if access_log_error_count != "N/A" else "N/A",
+            "기동스크립트수정일": startup_script_date if startup_script_date != "N/A" else "N/A",
+            
+            # DB 전용 항목 (WAS에서는 N/A)
+            "서버상태": "N/A",
+            "브로커상태": "N/A",
+            "브로커개수": "N/A",
+            "NCIA파일시스템": "N/A",
+            "HA상태": "N/A",
+        })
+    
     return formatted
 
 
@@ -1218,6 +1484,38 @@ async def get_os_checks_data(limit: int = 100):
             "success": True,
             "count": len(formatted_results),
             "results": formatted_results,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/was-checks/data")
+async def get_was_checks_data(limit: int = 1000):
+    """WAS 점검 결과를 JSON 형식으로 반환 (DB/OS 공통 테이블용)"""
+    try:
+        # "was"와 "tomcat" 둘 다 조회 (플레이북에서 "was"로 저장하지만 이전에는 "tomcat"일 수 있음)
+        results_was = get_check_results(check_type="was", limit=limit)
+        results_tomcat = get_check_results(check_type="tomcat", limit=limit)
+        
+        # 두 결과 합치기
+        all_results = list(results_was) + list(results_tomcat)
+        
+        # 중복 제거 (id 기준) 및 정렬
+        seen_ids = set()
+        unique_results = []
+        for result in all_results:
+            result_id = result.get("id")
+            if result_id and result_id not in seen_ids:
+                seen_ids.add(result_id)
+                unique_results.append(result)
+        
+        unique_results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        formatted_results = [format_db_result(result) for result in unique_results[:limit]]
+        
+        return {
+            "success": True,
+            "count": len(formatted_results),
+            "results": formatted_results
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
