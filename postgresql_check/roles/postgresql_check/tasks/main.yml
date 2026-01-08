@@ -4,7 +4,7 @@
 ################################
 # 1-1. DB엔진 파일시스템 (데이터 디렉토리)
 - name: Get PostgreSQL data directory
-  shell: sudo -u postgres psql -t -c "SHOW data_directory;"
+  shell: psql -U postgres -t -c "SHOW data_directory;" || sudo -n -u postgres psql -t -c "SHOW data_directory;"
   register: pg_data_directory
   ignore_errors: yes
   changed_when: false
@@ -20,10 +20,9 @@
 # 1-2. 아카이브(데이터변경) 로그 파일시스템 (WAL 아카이브 디렉토리)
 - name: Get PostgreSQL archive_command or archive directory
   shell: |
-    ARCHIVE_MODE=$(sudo -u postgres psql -t -c "SHOW archive_mode;" | xargs)
+    ARCHIVE_MODE=$(psql -U postgres -t -c "SHOW archive_mode;" 2>/dev/null | xargs || sudo -n -u postgres psql -t -c "SHOW archive_mode;" | xargs)
     if [ "$ARCHIVE_MODE" = "on" ]; then
-      ARCHIVE_CMD=$(sudo -u postgres psql -t -c "SHOW archive_command;" | xargs)
-      # archive_command에서 디렉토리 추출 시도
+      ARCHIVE_CMD=$(psql -U postgres -t -c "SHOW archive_command;" 2>/dev/null | xargs || sudo -n -u postgres psql -t -c "SHOW archive_command;" | xargs)
       echo "$ARCHIVE_CMD" | grep -oP "(?<=/)[^']+/" | head -1 || echo "/var/lib/pgsql/archive"
     else
       echo "/var/lib/pgsql/archive"

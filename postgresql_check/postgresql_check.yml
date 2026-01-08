@@ -1,7 +1,7 @@
 ---
 - name: PostgreSQL 통합 자동 점검
   hosts: postgresql
-  become: yes
+  become: no
   gather_facts: yes
   
   # API 설정 파일 로드 (파일이 없어도 기본값 사용)
