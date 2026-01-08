@@ -84,8 +84,8 @@ async def root():
             "GET /api/checks": "점검 결과 조회",
             "GET /api/health": "서버 상태 확인",
             "GET /api/db-checks/report": "DB 점검 결과 리포트 (HTML)",
-            "GET /api/os-checks/report": "OS 점검 결과 리포트 - 강하나 (HTML)",
-            "GET /api/was-checks/report": "WAS 점검 결과 리포트 - 이수민 (HTML)"
+            "GET /api/os-checks/report": "OS 점검 결과 리포트 (HTML)",
+            "GET /api/was-checks/report": "WAS 점검 결과 리포트 (HTML)"
         }
     }
 
@@ -1339,7 +1339,7 @@ async def db_checks_report():
 @app.get("/api/os-checks/report", response_class=HTMLResponse)
 async def os_checks_report():
     """
-    OS 점검 결과 리포트 - 강하나 담당자용
+    OS 점검 결과 리포트
     
     Returns:
         HTML 형식의 리포트
@@ -1372,7 +1372,7 @@ async def os_checks_report():
 @app.get("/api/was-checks/report", response_class=HTMLResponse)
 async def was_checks_report():
     """
-    WAS 점검 결과 리포트 - 이수민 담당자용
+    WAS 점검 결과 리포트
     
     Returns:
         HTML 형식의 리포트
