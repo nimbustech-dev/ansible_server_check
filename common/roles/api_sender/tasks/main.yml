@@ -10,7 +10,7 @@
     api_payload: |
       {
         "check_type": "{{ check_type }}",
-        "hostname": "{{ inventory_hostname }}",
+        "hostname": "{{ hostname | default(inventory_hostname) }}",
         "check_time": "{{ ansible_date_time.iso8601 }}",
         "checker": "{{ checker_name }}",
         "status": "success",
