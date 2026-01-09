@@ -12,7 +12,7 @@
       failed_when: false
       ignore_errors: yes
     
-    # 실행 PC의 호스트명 가져오기 (호스트명 자동 설정용)
+    # 로컬 PC의 호스트명 가져오기 (로컬 점검 구분용)
     - name: Get local machine hostname
       shell: hostname
       register: local_hostname
@@ -21,10 +21,19 @@
       changed_when: false
       failed_when: false
     
-    # 실행 PC에 따라 호스트명 자동 설정
-    - name: Set hostname based on execution PC
+    # 점검 대상 서버의 호스트명 가져오기 (로컬 점검인지 확인용)
+    - name: Get target server hostname
+      shell: hostname
+      register: target_hostname
+      changed_when: false
+      failed_when: false
+    
+    # 호스트명 자동 설정: 
+    # - 원격 서버 점검 시 → inventory_hostname 사용 (dongguk_server1 등)
+    # - 로컬 점검 시 → 실행 PC 호스트명 기반으로 설정
+    - name: Set hostname based on inventory or execution PC
       set_fact:
-        auto_hostname: "{{ 'Taehwan' if 'DESKTOP-JAC7QHN' in local_hostname.stdout else ('Hana-PC' if 'Hana' in local_hostname.stdout or 'hana' in local_hostname.stdout else inventory_hostname) }}"
+        auto_hostname: "{{ inventory_hostname if target_hostname.stdout != local_hostname.stdout else ('Taehwan' if 'DESKTOP-JAC7QHN' in local_hostname.stdout else ('Hana-PC' if 'Hana' in local_hostname.stdout or 'hana' in local_hostname.stdout else inventory_hostname)) }}"
       run_once: true
   
   vars:
