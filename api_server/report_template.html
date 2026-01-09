@@ -900,13 +900,31 @@
         }
         
         // 데이터 로드
+        let originalDataMap = new Map(); // ID를 키로 하는 원본 데이터 맵
+        
         async function loadData() {
             try {
+                // 포맷된 데이터 가져오기 (테이블 표시용)
                 const response = await fetch('/api/db-checks/data?limit=1000');
                 const data = await response.json();
                 
                 if (data.success && data.results) {
                     allData = data.results;
+                    
+                    // 원본 데이터도 함께 가져오기 (상세 정보 표시용)
+                    try {
+                        const originalResponse = await fetch('/api/checks?limit=1000');
+                        const originalData = await originalResponse.json();
+                        if (originalData.success && originalData.results) {
+                            originalDataMap.clear();
+                            originalData.results.forEach(item => {
+                                originalDataMap.set(item.id, item);
+                            });
+                        }
+                    } catch (err) {
+                        console.warn('원본 데이터 로드 실패 (상세 정보는 포맷된 데이터로 표시됩니다):', err);
+                    }
+                    
                     applyFilters();
                     updateStats(allData);
                     updateCharts(allData);
@@ -1052,6 +1070,61 @@
             `;
         }
         
+        // 컬럼 결정 (첫 행 기준이 아니라 전체 결과의 union으로 고정)
+        // - 최신 결과 타입이 바뀌어도 테이블 컬럼이 흔들리지 않게 함
+        // - DB 종류별로 키가 다르더라도 기존 결과가 N/A로 "바뀐 것처럼" 보이지 않게 함
+        const COLUMN_PRIORITY = [
+            'id',
+            '점검유형',
+            '호스트명',
+            '점검시간',
+            '담당자',
+            '상태',
+            '설치확인',
+            '설치경로',
+            // DB 공통으로 자주 보는 항목들
+            '서비스상태',
+            '리스너(MariaDB)',
+            '리스너(PostgreSQL)',
+            'DB엔진파일시스템',
+            '아카이브로그파일시스템',
+            '시스템로그파일시스템',
+            '파일시스템',
+            '디렉토리구조',
+            '메모리(Total)',
+            '메모리(Used)',
+            '메모리(Available)',
+            'CPU사용률',
+            '프로세스수',
+            '데이터베이스수',
+            '데이터베이스목록',
+            '테이블스페이스',
+        ];
+
+        // N/A를 오류로 판단할 때는 "필수 컬럼"만 본다
+        // (DB 종류가 섞인 테이블에서 타입별 비해당 컬럼은 N/A가 정상임)
+        const CRITICAL_COLUMNS_FOR_NA = ['id', '점검유형', '호스트명', '점검시간', '담당자', '상태'];
+
+        function getUnifiedColumns(results) {
+            const colSet = new Set();
+            results.forEach(row => {
+                if (row && typeof row === 'object') {
+                    Object.keys(row).forEach(k => colSet.add(k));
+                }
+            });
+
+            const cols = Array.from(colSet);
+            const priorityIndex = new Map(COLUMN_PRIORITY.map((c, i) => [c, i]));
+            cols.sort((a, b) => {
+                const ai = priorityIndex.has(a) ? priorityIndex.get(a) : 100000;
+                const bi = priorityIndex.has(b) ? priorityIndex.get(b) : 100000;
+                if (ai !== bi) return ai - bi;
+                // 나머지는 한글/영문 섞여 있어도 안정적으로 정렬
+                return String(a).localeCompare(String(b), 'ko');
+            });
+            return cols;
+        }
+
         // 테이블 렌더링
         function renderTable(results) {
             if (results.length === 0) {
@@ -1061,8 +1134,7 @@
                 return;
             }
             
-            const firstRow = results[0];
-            const columns = Object.keys(firstRow);
+            const columns = getUnifiedColumns(results);
             
             let html = '<table><thead><tr>';
             columns.forEach(col => {
@@ -1072,8 +1144,8 @@
             
             results.forEach((row, index) => {
                 const status = String(row.상태 || '').toLowerCase();
-                // 오류 판단: error, x 포함, 또는 N/A 값이 있는 경우
-                const hasNA = columns.some(col => {
+                // 오류 판단: error, x 포함, 또는 (필수 컬럼에서) N/A 값이 있는 경우
+                const hasNA = CRITICAL_COLUMNS_FOR_NA.some(col => {
                     const value = row[col];
                     return value === null || value === undefined || value === 'N/A' || value === '';
                 });
@@ -1081,7 +1153,8 @@
                 const rowClass = isError ? 'error-row' : '';
                 const rowId = `row-${index}`;
                 
-                html += `<tr class="${rowClass}" ${isError ? `onclick="showErrorDetails(${index})"` : ''} data-row-index="${index}">`;
+                // 모든 행을 클릭 가능하도록 수정 (커서 스타일 추가)
+                html += `<tr class="${rowClass}" style="cursor: pointer;" onclick="showErrorDetails(${index})" data-row-index="${index}">`;
                 columns.forEach(col => {
                     html += `<td>${formatCell(row[col], col)}</td>`;
                 });
@@ -1224,7 +1297,7 @@
             };
         }
         
-        // 오류 상세 정보 표시
+        // 상세 정보 표시 (모든 행 클릭 가능)
         let currentFilteredData = [];
         
         function showErrorDetails(index) {
@@ -1234,26 +1307,38 @@
             const modal = document.getElementById('errorModal');
             const modalBody = document.getElementById('modalBody');
             
-            // 원본 데이터 가져오기 (API에서 받은 전체 데이터)
-            const originalData = allData.find(item => {
-                return item.id === rowData.id || 
-                       (item.호스트명 === rowData.호스트명 && 
-                        item.점검시간 === rowData.점검시간);
-            });
+            // 원본 데이터 가져오기 (맵에서 찾기)
+            let originalData = originalDataMap.get(rowData.id);
             
+            // 맵에 없으면 API에서 직접 가져오기
             if (!originalData) {
-                modalBody.innerHTML = '<p>상세 정보를 불러올 수 없습니다.</p>';
-                modal.classList.add('active');
-                return;
+                fetch(`/api/checks?id=${rowData.id}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success && data.results && data.results.length > 0) {
+                            originalData = data.results[0];
+                            originalDataMap.set(originalData.id, originalData);
+                            displayErrorDetails(originalData);
+                        } else {
+                            // 포맷된 데이터로 표시 (원본 데이터가 없는 경우)
+                            displayErrorDetails(rowData);
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Error fetching original data:', err);
+                        // 포맷된 데이터로 표시
+                        displayErrorDetails(rowData);
+                    });
+            } else {
+                displayErrorDetails(originalData);
             }
-            
-            // 원본 데이터 사용 (이미 allData에 있음)
-            displayErrorDetails(originalData || rowData);
         }
         
         function displayErrorDetails(data) {
             const modalBody = document.getElementById('modalBody');
-            const results = data.results || {};
+            // 원본 데이터인지 포맷된 데이터인지 확인
+            const isOriginalData = data.results && typeof data.results === 'object' && !Array.isArray(data.results);
+            const results = isOriginalData ? data.results : {};
             const checkType = data.check_type || data.점검유형 || 'UNKNOWN';
             
             let html = '';
@@ -1268,48 +1353,86 @@
             html += `<div class="detail-item ${data.status && data.status.toLowerCase().includes('error') ? 'error-highlight' : 'success-highlight'}"><div class="detail-item-label">상태</div><div class="detail-item-value">${data.status || 'N/A'}</div></div>`;
             html += '</div>';
             
-            // 점검 결과 상세
-            html += '<div class="detail-section">';
-            html += '<h3>점검 결과 상세</h3>';
-            
-            // results 객체의 모든 항목 표시
-            for (const [key, value] of Object.entries(results)) {
-                let displayValue = '';
-                let isError = false;
+            // 점검 결과 상세 (원본 데이터가 있는 경우만)
+            if (isOriginalData && Object.keys(results).length > 0) {
+                html += '<div class="detail-section">';
+                html += '<h3>점검 결과 상세</h3>';
                 
-                // N/A 값도 표시하되 오류로 강조
-                if (value === null || value === undefined || value === 'N/A' || value === '') {
-                    displayValue = 'N/A (값 없음)';
-                    isError = true;
-                } else if (typeof value === 'object') {
-                    displayValue = JSON.stringify(value, null, 2);
-                    // 에러 메시지나 실패 상태 확인
-                    if (JSON.stringify(value).toLowerCase().includes('error') || 
-                        JSON.stringify(value).toLowerCase().includes('fail')) {
+                // results 객체의 모든 항목 표시
+                for (const [key, value] of Object.entries(results)) {
+                    let displayValue = '';
+                    let isError = false;
+                    
+                    // N/A 값도 표시하되 오류로 강조
+                    if (value === null || value === undefined || value === 'N/A' || value === '') {
+                        displayValue = 'N/A (값 없음)';
                         isError = true;
+                    } else if (typeof value === 'object') {
+                        displayValue = JSON.stringify(value, null, 2);
+                        // 에러 메시지나 실패 상태 확인
+                        if (JSON.stringify(value).toLowerCase().includes('error') || 
+                            JSON.stringify(value).toLowerCase().includes('fail')) {
+                            isError = true;
+                        }
+                    } else {
+                        displayValue = String(value);
+                        if (displayValue.toLowerCase().includes('error') || 
+                            displayValue.toLowerCase().includes('fail') ||
+                            displayValue === 'N/A') {
+                            isError = true;
+                        }
                     }
-                } else {
-                    displayValue = String(value);
-                    if (displayValue.toLowerCase().includes('error') || 
-                        displayValue.toLowerCase().includes('fail') ||
-                        displayValue === 'N/A') {
-                        isError = true;
-                    }
+                    
+                    const itemClass = isError ? 'error-highlight' : '';
+                    html += `<div class="detail-item ${itemClass}">`;
+                    html += `<div class="detail-item-label">${key}</div>`;
+                    html += `<div class="detail-item-value" style="white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;">${escapeHtml(displayValue)}</div>`;
+                    html += '</div>';
                 }
                 
-                const itemClass = isError ? 'error-highlight' : '';
-                html += `<div class="detail-item ${itemClass}">`;
-                html += `<div class="detail-item-label">${key}</div>`;
-                html += `<div class="detail-item-value">${escapeHtml(displayValue)}</div>`;
+                html += '</div>';
+            } else {
+                // 포맷된 데이터인 경우 테이블의 모든 컬럼 표시
+                html += '<div class="detail-section">';
+                html += '<h3>점검 결과 상세</h3>';
+                
+                for (const [key, value] of Object.entries(data)) {
+                    // 기본 정보는 이미 표시했으므로 제외
+                    if (['id', '점검유형', '호스트명', '점검시간', '담당자', '상태', 'check_type', 'hostname', 'check_time', 'checker', 'status'].includes(key)) {
+                        continue;
+                    }
+                    
+                    let displayValue = '';
+                    let isError = false;
+                    
+                    if (value === null || value === undefined || value === 'N/A' || value === '') {
+                        displayValue = 'N/A (값 없음)';
+                        isError = true;
+                    } else if (typeof value === 'object') {
+                        displayValue = JSON.stringify(value, null, 2);
+                    } else {
+                        displayValue = String(value);
+                        if (displayValue.toLowerCase().includes('error') || 
+                            displayValue.toLowerCase().includes('fail') ||
+                            displayValue === 'N/A') {
+                            isError = true;
+                        }
+                    }
+                    
+                    const itemClass = isError ? 'error-highlight' : '';
+                    html += `<div class="detail-item ${itemClass}">`;
+                    html += `<div class="detail-item-label">${key}</div>`;
+                    html += `<div class="detail-item-value" style="white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;">${escapeHtml(displayValue)}</div>`;
+                    html += '</div>';
+                }
+                
                 html += '</div>';
             }
-            
-            html += '</div>';
             
             // 원본 데이터 (디버깅용)
             html += '<div class="detail-section">';
             html += '<h3>📄 원본 데이터 (JSON)</h3>';
-            html += `<div class="detail-item"><div class="detail-item-value" style="max-height: 300px;">${escapeHtml(JSON.stringify(data, null, 2))}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-value" style="max-height: 300px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; font-size: 12px;">${escapeHtml(JSON.stringify(data, null, 2))}</div></div>`;
             html += '</div>';
             
             modalBody.innerHTML = html;

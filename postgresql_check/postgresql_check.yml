@@ -32,6 +32,8 @@
       url: "{{ api_server.url | default('http://192.168.0.18:8000/api/checks') }}"
       timeout: "{{ api_server.timeout | default(30) }}"
       retry_count: "{{ api_server.retry_count | default(3) }}"
+    # PostgreSQL 접속 비밀번호 (환경 변수 또는 기본값)
+    postgresql_password: "{{ lookup('env', 'POSTGRESQL_PASSWORD') | default('nimbus1234') }}"
 
   roles:
     - postgresql_check
@@ -62,7 +64,10 @@
             port_5432: "{{ pg_listener.stdout | default('N/A') }}"
           db_connection:
             status: "{{ db_connection_status.stdout | default('N/A') }}"
-            active_sessions: "{{ pg_sessions.stdout | default('N/A') }}"
+            active_sessions: "{{ active_session_count.stdout | default('N/A') }}"
+            session_detail: "{{ pg_sessions.stdout | default('N/A') }}"
+          postgres_process: "{{ postgres_process.stdout | default('N/A') }}"
+          ha_status: "{{ ha_status.stdout | default('N/A') }}"
           os_resources:
             memory:
               detail: "{{ mem_usage.stdout | default('N/A') }}"

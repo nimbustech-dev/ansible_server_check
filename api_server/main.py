@@ -154,6 +154,7 @@ async def list_check_results(
     check_type: Optional[str] = None,
     hostname: Optional[str] = None,
     checker: Optional[str] = None,
+    id: Optional[int] = None,
     limit: int = 100
 ):
     """
@@ -163,12 +164,31 @@ async def list_check_results(
         check_type: 점검 유형 필터
         hostname: 호스트명 필터
         checker: 담당자 필터
+        id: 점검 결과 ID (특정 ID 조회 시)
         limit: 최대 조회 개수
         
     Returns:
         점검 결과 목록
     """
     try:
+        # ID로 조회하는 경우
+        if id is not None:
+            from database import SessionLocal
+            from models import CheckResult
+            db = SessionLocal()
+            try:
+                result = db.query(CheckResult).filter(CheckResult.id == id).first()
+                if result:
+                    return {
+                        "success": True,
+                        "count": 1,
+                        "results": [result.to_dict()]
+                    }
+                else:
+                    raise HTTPException(status_code=404, detail=f"ID {id}에 해당하는 점검 결과를 찾을 수 없습니다.")
+            finally:
+                db.close()
+        
         results = get_check_results(
             check_type=check_type,
             hostname=hostname,
@@ -180,6 +200,8 @@ async def list_check_results(
             "count": len(results),
             "results": results
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -316,6 +338,9 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
         except:
             pass
         
+        # 온라인 백업 가능 여부 파싱
+        online_backup_possible = db_internal.get("online_backup_possible", "N/A")
+        
         # 설치 확인 파싱
         installation_status = "✗"
         installation_path = "N/A"
@@ -428,29 +453,149 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
         except:
             pass
         
+        # 파일시스템 사용률 파싱
+        db_engine_fs = "N/A"
+        archive_log_fs = "N/A"
+        system_log_fs = "N/A"
+        try:
+            if isinstance(filesystem_usage, dict):
+                # DB엔진 파일시스템 파싱 (df -h 출력에서 사용률 추출)
+                db_engine_str = filesystem_usage.get("db_engine", "")
+                if isinstance(db_engine_str, str) and db_engine_str != "N/A" and db_engine_str.strip():
+                    # df -h 출력 형식: "/dev/sdd       1007G  4.2G  952G   1% /"
+                    parts = db_engine_str.split()
+                    if len(parts) >= 5:
+                        # 사용률 추출 (예: "1%")
+                        usage = parts[-2] if parts[-2].endswith("%") else "N/A"
+                        # 파일시스템과 마운트 포인트
+                        fs_info = f"{parts[0]} {usage} {parts[-1]}" if usage != "N/A" else db_engine_str[:50]
+                        db_engine_fs = fs_info
+                    else:
+                        db_engine_fs = db_engine_str[:50]
+                
+                # 아카이브 로그 파일시스템 파싱
+                archive_log_str = filesystem_usage.get("archive_log", "")
+                if isinstance(archive_log_str, str) and archive_log_str != "N/A" and archive_log_str.strip():
+                    if "not found" not in archive_log_str.lower():
+                        parts = archive_log_str.split()
+                        if len(parts) >= 5:
+                            usage = parts[-2] if parts[-2].endswith("%") else "N/A"
+                            fs_info = f"{parts[0]} {usage} {parts[-1]}" if usage != "N/A" else archive_log_str[:50]
+                            archive_log_fs = fs_info
+                        else:
+                            archive_log_fs = archive_log_str[:50]
+                    else:
+                        archive_log_fs = "N/A"
+                
+                # 시스템 로그 파일시스템 파싱
+                system_log_str = filesystem_usage.get("system_log", "")
+                if isinstance(system_log_str, str) and system_log_str != "N/A" and system_log_str.strip():
+                    if "not found" not in system_log_str.lower():
+                        parts = system_log_str.split()
+                        if len(parts) >= 5:
+                            usage = parts[-2] if parts[-2].endswith("%") else "N/A"
+                            fs_info = f"{parts[0]} {usage} {parts[-1]}" if usage != "N/A" else system_log_str[:50]
+                            system_log_fs = fs_info
+                        else:
+                            system_log_fs = system_log_str[:50]
+                    else:
+                        system_log_fs = "N/A"
+        except Exception as e:
+            pass
+        
+        # 최대연결수 파싱
+        max_conn = "N/A"
+        try:
+            max_conn_str = db_internal.get("max_connections", "")
+            if isinstance(max_conn_str, str) and max_conn_str.strip() and max_conn_str != "N/A":
+                max_conn = max_conn_str.strip()
+        except:
+            pass
+        
+        # 활성세션수 파싱
+        active_sess = "N/A"
+        try:
+            sess_str = db_internal.get("active_sessions", "")
+            if isinstance(sess_str, str) and sess_str.strip() and sess_str != "N/A":
+                active_sess = sess_str.strip()
+            elif isinstance(sess_str, (int, float)):
+                active_sess = str(int(sess_str))
+        except:
+            pass
+        
+        # DB접속상태 파싱
+        db_conn_status = "N/A"
+        try:
+            conn_str = db_internal.get("db_connection_status", "")
+            if isinstance(conn_str, str):
+                if "CONNECTED" in conn_str.upper():
+                    db_conn_status = "✓ 연결됨"
+                elif "DISCONNECTED" in conn_str.upper():
+                    db_conn_status = "✗ 연결실패"
+                else:
+                    db_conn_status = conn_str
+        except:
+            pass
+        
+        # 관리프로세스 파싱
+        admin_proc = "N/A"
+        try:
+            proc_str = db_internal.get("mariadb_process", "")
+            if isinstance(proc_str, str):
+                if "RUNNING" in proc_str.upper():
+                    admin_proc = "✓ 실행중"
+                elif "NOT_RUNNING" in proc_str.upper():
+                    admin_proc = "✗ 중지됨"
+                else:
+                    admin_proc = proc_str
+        except:
+            pass
+        
+        # HA상태 파싱
+        ha_status_display = "N/A"
+        try:
+            ha_str = db_internal.get("ha_status", "")
+            if isinstance(ha_str, str) and ha_str.strip() and ha_str != "N/A":
+                ha_status_display = ha_str.strip()[:50]
+        except:
+            pass
+        
         formatted.update({
             "설치확인": installation_status,
             "설치경로": str(installation_path)[:40],
             "디렉토리구조": "있음" if "not present" not in str(directory_structure).lower() else "없음",
             "파일시스템": "있음" if "not found" not in str(filesystem_usage).lower() else "없음",
             "서비스상태": f"{service_status.get('active', 'N/A')}/{service_status.get('substate', 'N/A')}",
-            "리스너(3306)": "LISTENING" if "LISTEN" in str(listener) else "NOT LISTENING",
+            "리스너(MariaDB)": "LISTENING" if "LISTEN" in str(listener) else "NOT LISTENING",
+            "DB엔진파일시스템": db_engine_fs,
+            "아카이브로그파일시스템": archive_log_fs,
+            "시스템로그파일시스템": system_log_fs,
             "메모리(Total)": memory_total,
             "메모리(Used)": memory_used,
             "메모리(Available)": memory_available,
+            "메모리": f"{memory_total} / {memory_available}",
+            "메모리사용률": os_resources.get("memory", {}).get("usage_percent", "N/A") if isinstance(os_resources.get("memory"), dict) else "N/A",
             "CPU사용률": cpu_info,
+            "CPU": os_resources.get("cpu", {}).get("usage_percent", "N/A") if isinstance(os_resources.get("cpu"), dict) else "N/A",
             "프로세스수": os_resources.get("process_count", "N/A"),
             "InnoDB버퍼풀": innodb_bp,
             "바이너리로그": log_bin_status,
             "테이블스페이스": tablespace_summary,
             "데이터베이스수": str(db_count).strip() if str(db_count).strip() != "0" else "0 (사용자 DB 없음)",
             "데이터베이스목록": db_list_display,
+            "최대연결수": max_conn,
+            "활성세션수": active_sess,
+            "DB접속상태": db_conn_status,
+            "관리프로세스": admin_proc,
+            "HA상태": ha_status_display,
+            "온라인백업가능": "가능" if "POSSIBLE" in str(online_backup_possible).upper() else "불가능",
             "CPU상위프로세스": cpu_top,
             "메모리상위프로세스": mem_top,
             "CPU모델명": cpu_model[:50] if cpu_model != "N/A" else "N/A",
             "Swap상태": swap_status_display,
             "루트디스크사용률": root_disk_display,
             "디스크사용현황": all_disk_summary,
+            "파일시스템(70%초과)": all_disk_summary,  # 동일한 값 사용
             "네트워크통신": network_status,
             "NTP동기화": ntp_status,
         })
@@ -506,10 +651,52 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
         db_conn_status = "N/A"
         session_count = "N/A"
         try:
-            db_conn_status = db_connection.get("status", "N/A")
+            db_conn_str = db_connection.get("status", "")
+            if isinstance(db_conn_str, str):
+                if "CONNECTED" in db_conn_str.upper():
+                    db_conn_status = "✓ 연결됨"
+                elif "DISCONNECTED" in db_conn_str.upper() or "NO_CONNECTIONS" in db_conn_str.upper():
+                    db_conn_status = "✗ 연결실패"
+                else:
+                    db_conn_status = db_conn_str
+            
+            # 활성세션수 파싱
             session_str = db_connection.get("active_sessions", "")
-            if isinstance(session_str, str):
-                session_count = str(session_str.count("\n") - 1) if "\n" in session_str else "1"
+            if isinstance(session_str, str) and session_str != "N/A" and session_str.strip():
+                session_count = session_str.strip()
+            elif isinstance(session_str, (int, float)):
+                session_count = str(int(session_str))
+            else:
+                # session_detail에서 줄 수 계산 (fallback)
+                session_detail = db_connection.get("session_detail", "")
+                if isinstance(session_detail, str) and session_detail != "N/A" and session_detail.strip():
+                    if "\n" in session_detail:
+                        session_count = str(len([l for l in session_detail.split("\n") if l.strip()]))
+                    else:
+                        session_count = "1" if session_detail.strip() else "0"
+        except:
+            pass
+        
+        # 관리프로세스 파싱
+        admin_proc = "N/A"
+        try:
+            proc_str = results.get("postgres_process", "")
+            if isinstance(proc_str, str):
+                if "RUNNING" in proc_str.upper():
+                    admin_proc = "✓ 실행중"
+                elif "NOT_RUNNING" in proc_str.upper():
+                    admin_proc = "✗ 중지됨"
+                else:
+                    admin_proc = proc_str
+        except:
+            pass
+        
+        # HA상태 파싱
+        ha_status_display = "N/A"
+        try:
+            ha_str = results.get("ha_status", "")
+            if isinstance(ha_str, str) and ha_str.strip() and ha_str != "N/A":
+                ha_status_display = ha_str.strip()[:50]
         except:
             pass
         
@@ -684,17 +871,46 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
         except:
             pass
         
+        # 디렉토리구조 파싱
+        directory_structure = results.get("directory_structure", "N/A")
+        
+        # 메모리 상세 정보 파싱 (Total, Used, Available)
+        memory_total = "N/A"
+        memory_used = "N/A"
+        memory_available = "N/A"
+        try:
+            mem_detail = os_resources.get("memory", {})
+            if isinstance(mem_detail, dict):
+                mem_str = mem_detail.get("detail", "")
+                if isinstance(mem_str, str) and "\n" in mem_str:
+                    lines = mem_str.split("\n")
+                    if len(lines) > 1:
+                        parts = lines[1].split()
+                        if len(parts) >= 2:
+                            memory_total = parts[1]
+                            memory_used = parts[2] if len(parts) > 2 else "N/A"
+                            memory_available = parts[6] if len(parts) > 6 else "N/A"
+        except:
+            pass
+        
         formatted.update({
             "설치확인": installation_status,
             "설치경로": str(installation_path)[:40],
+            "디렉토리구조": "있음" if "not present" not in str(directory_structure).lower() else "없음",
             "DB엔진파일시스템": db_engine_fs,
             "아카이브로그파일시스템": filesystem_usage.get("archive_log", "N/A")[:50],
             "시스템로그파일시스템": filesystem_usage.get("system_log", "N/A")[:50],
-            "파일시스템(70%초과)": fs_usage,
+            "파일시스템": "있음" if "not found" not in str(filesystem_usage).lower() else "없음",
+            "파일시스템(70%초과)": fs_usage if isinstance(fs_usage, str) else "정상",
             "서비스상태": f"{service_status.get('active', 'N/A')}/{service_status.get('substate', 'N/A')}",
-            "리스너(5432)": f"{listener_status} ({listener_detail})",
+            "리스너(PostgreSQL)": f"{listener_status} ({listener_detail})",
             "DB접속상태": db_conn_status,
             "활성세션수": session_count,
+            "관리프로세스": admin_proc,
+            "HA상태": ha_status_display,
+            "메모리(Total)": memory_total,
+            "메모리(Used)": memory_used,
+            "메모리(Available)": memory_available,
             "메모리": memory_info,
             "메모리사용률": memory_percent,
             "CPU": cpu_info,
@@ -704,7 +920,7 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "최대연결수": str(db_parameters.get("max_connections", "N/A")).strip(),
             "테이블스페이스": tablespace_summary,
             "아카이브모드": str(wal.get("archive_mode", "N/A")).strip(),
-            "온라인백업가능": wal.get("online_backup_possible", "N/A")[:50],
+            "온라인백업가능": "가능" if "POSSIBLE" in str(wal.get("online_backup_possible", "")).upper() else "불가능",
             "WAL크기": wal_size,
             "데이터베이스수": str(db_count).strip() if str(db_count).strip() != "0" else "0 (사용자 DB 없음)",
             "데이터베이스목록": db_list_display,

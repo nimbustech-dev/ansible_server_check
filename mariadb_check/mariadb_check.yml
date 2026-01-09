@@ -78,6 +78,11 @@
             online_backup_possible: "{{ online_backup_possible.stdout | default('N/A') }}"
             transaction_log_size: "{{ transaction_log_size.stdout | default('N/A') }}"
             tablespace: "{{ tablespace.stdout | default('N/A') }}"
+            max_connections: "{{ max_connections.stdout | default('N/A') }}"
+            active_sessions: "{{ active_sessions.stdout | default('N/A') }}"
+            db_connection_status: "{{ db_connection_status.stdout | default('N/A') }}"
+            mariadb_process: "{{ mariadb_process.stdout | default('N/A') }}"
+            ha_status: "{{ ha_status.stdout | default('N/A') }}"
           os_basics:
             cpu_model_name: "{{ cpu_model_name.stdout | default('N/A') }}"
             swap_status: "{{ swap_status.stdout | default('N/A') }}"
