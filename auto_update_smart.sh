@@ -1,0 +1,68 @@
+#!/bin/bash
+# 스마트 자동 업데이트: 변경사항이 있을 때만 pull 및 재시작
+# 중앙 서버(192.168.0.18)에서 Cron Job으로 사용
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+LOG_FILE="/tmp/api_auto_update.log"
+
+# 로그 함수
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+log "🔄 코드 업데이트 체크 시작..."
+
+# 1. 원격 저장소 정보 가져오기 (충돌 방지)
+git fetch origin develop > /dev/null 2>&1
+
+# 2. 로컬과 원격의 차이 확인
+LOCAL=$(git rev-parse HEAD)
+REMOTE=$(git rev-parse origin/develop)
+
+if [ "$LOCAL" = "$REMOTE" ]; then
+    log "✅ 최신 코드입니다. 업데이트 불필요."
+    exit 0
+fi
+
+log "📥 변경사항 발견! 업데이트 시작..."
+
+# 3. Git pull
+git pull origin develop
+
+if [ $? -ne 0 ]; then
+    log "❌ Git pull 실패 - 충돌이 발생했을 수 있습니다"
+    exit 1
+fi
+
+log "✅ 코드 업데이트 완료"
+
+# 4. API 서버 재시작
+log "🔄 API 서버 재시작 중..."
+
+# 서버 종료
+if [ -f "$SCRIPT_DIR/api_server.pid" ]; then
+    PID=$(cat "$SCRIPT_DIR/api_server.pid")
+    if ps -p $PID > /dev/null 2>&1; then
+        log "   기존 서버 종료 중... (PID: $PID)"
+        kill $PID 2>/dev/null
+        sleep 2
+        if ps -p $PID > /dev/null 2>&1; then
+            kill -9 $PID 2>/dev/null
+        fi
+        rm -f "$SCRIPT_DIR/api_server.pid"
+    fi
+fi
+
+# 서버 시작
+log "   새 서버 시작 중..."
+cd "$SCRIPT_DIR"
+./start_api_server.sh >> "$LOG_FILE" 2>&1
+
+if [ $? -eq 0 ]; then
+    log "✅ 업데이트 및 재시작 완료!"
+else
+    log "❌ 서버 재시작 실패"
+    exit 1
+fi
