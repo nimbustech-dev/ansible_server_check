@@ -1203,12 +1203,14 @@
             }
             
             // 날짜/시간 포맷팅
-            if (columnName === '점검시간' && String(value).includes('T')) {
+            if (columnName === '점검시간') {
                 try {
-                    const date = new Date(value);
-                    return date.toLocaleString('ko-KR');
+                    const date = new Date(valueStr);
+                    if (!isNaN(date.getTime())) {
+                        return date.toLocaleString('ko-KR');
+                    }
                 } catch (e) {
-                    return value;
+                    return valueStr;
                 }
             }
             
