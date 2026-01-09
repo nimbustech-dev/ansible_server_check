@@ -1202,6 +1202,18 @@
                 }
             }
             
+            // 날짜/시간 포맷팅
+            if (columnName === '점검시간') {
+                try {
+                    const date = new Date(valueStr);
+                    if (!isNaN(date.getTime())) {
+                        return date.toLocaleString('ko-KR');
+                    }
+                } catch (e) {
+                    return valueStr;
+                }
+            }
+            
             // 긴 텍스트는 잘라서 표시
             if (valueStr.length > 50) {
                 return `<span title="${valueStr}">${valueStr.substring(0, 47)}...</span>`;

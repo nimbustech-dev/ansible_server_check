@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from contextlib import asynccontextmanager
 import uvicorn
 import json
@@ -209,6 +209,47 @@ async def list_check_results(
         )
 
 
+def format_check_time(check_time_str: str) -> str:
+    """점검 시간을 한국어 형식으로 포맷팅"""
+    if not check_time_str or check_time_str == "N/A":
+        return "N/A"
+    
+    try:
+        # ISO 8601 형식 파싱 (예: "2026-01-09T01:58:51Z")
+        if 'T' in check_time_str:
+            # ISO 8601 형식 파싱
+            dt_str = check_time_str.replace('Z', '+00:00')
+            dt = datetime.fromisoformat(dt_str)
+            
+            # UTC 시간대가 없으면 UTC로 간주
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            
+            # 한국 시간대(KST, UTC+9)로 변환
+            kst = timezone(timedelta(hours=9))
+            dt_kst = dt.astimezone(kst)
+            
+            # 한국어 형식으로 포맷팅 (예: "2026. 1. 9. 오전 10:58:51")
+            # strftime에서 %-m, %-d는 Windows에서 지원되지 않으므로 직접 처리
+            year = dt_kst.year
+            month = dt_kst.month
+            day = dt_kst.day
+            hour = dt_kst.hour
+            minute = dt_kst.minute
+            second = dt_kst.second
+            
+            # 오전/오후 구분
+            am_pm = "오전" if hour < 12 else "오후"
+            hour_12 = hour if hour <= 12 else hour - 12
+            if hour_12 == 0:
+                hour_12 = 12
+            
+            return f"{year}. {month}. {day}. {am_pm} {hour_12}:{minute:02d}:{second:02d}"
+        return check_time_str
+    except Exception:
+        return check_time_str
+
+
 def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
     """DB 점검 결과를 표 형식으로 정리"""
     check_type = result.get("check_type", "")
@@ -217,7 +258,7 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "id": result.get("id"),
         "점검유형": check_type.upper(),
         "호스트명": result.get("hostname", "N/A"),
-        "점검시간": result.get("check_time", "N/A"),
+        "점검시간": format_check_time(result.get("check_time", "N/A")),
         "담당자": result.get("checker", "N/A"),
         "상태": result.get("status", "N/A"),
     }
