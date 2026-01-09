@@ -910,6 +910,7 @@
                 
                 if (data.success && data.results) {
                     allData = data.results;
+                    console.log(`✅ DB 점검 데이터 로드 완료: ${allData.length}개`);
                     
                     // 원본 데이터도 함께 가져오기 (상세 정보 표시용)
                     try {
@@ -920,6 +921,7 @@
                             originalData.results.forEach(item => {
                                 originalDataMap.set(item.id, item);
                             });
+                            console.log(`✅ 원본 데이터 로드 완료: ${originalDataMap.size}개`);
                         }
                     } catch (err) {
                         console.warn('원본 데이터 로드 실패 (상세 정보는 포맷된 데이터로 표시됩니다):', err);
@@ -929,13 +931,14 @@
                     updateStats(allData);
                     updateCharts(allData);
                 } else {
+                    console.error('❌ 데이터 로드 실패:', data);
                     document.getElementById('tableWrapper').innerHTML = 
                         '<div class="no-data">데이터를 불러올 수 없습니다.</div>';
                 }
             } catch (error) {
-                console.error('Error loading data:', error);
+                console.error('❌ 데이터 로딩 중 오류:', error);
                 document.getElementById('tableWrapper').innerHTML = 
-                    '<div class="no-data">데이터 로딩 중 오류가 발생했습니다.</div>';
+                    '<div class="no-data">데이터 로딩 중 오류가 발생했습니다: ' + error.message + '</div>';
             }
         }
         
@@ -1127,7 +1130,9 @@
 
         // 테이블 렌더링
         function renderTable(results) {
+            console.log(`📊 테이블 렌더링 시작: ${results.length}개 결과`);
             if (results.length === 0) {
+                console.warn('⚠️ 렌더링할 데이터가 없습니다');
                 document.getElementById('tableWrapper').innerHTML = 
                     '<div class="no-data">표시할 데이터가 없습니다.</div>';
                 document.getElementById('topScrollbarContent').style.width = '0px';
@@ -1253,12 +1258,12 @@
             // 날짜/시간 포맷팅 (T가 포함되어 있거나 날짜 객체로 변환 가능한 경우)
             if (columnName === '점검시간') {
                 try {
-                    const date = new Date(valueStr);
+                    const date = new Date(value);
                     if (!isNaN(date.getTime())) {
                         return date.toLocaleString('ko-KR');
                     }
                 } catch (e) {
-                    return valueStr;
+                    return String(value);
                 }
             }
             
