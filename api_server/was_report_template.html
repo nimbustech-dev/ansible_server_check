@@ -1282,14 +1282,17 @@
             
             let html = '';
             
-            // 기본 정보 (format_was_result로 변환된 데이터 사용)
+            // 기본 정보 (한글 키값 우선 참조)
             html += '<div class="detail-section">';
             html += '<h3>기본 정보</h3>';
-            html += `<div class="detail-item"><div class="detail-item-label">점검 유형</div><div class="detail-item-value">WAS</div></div>`;
-            html += `<div class="detail-item"><div class="detail-item-label">호스트명</div><div class="detail-item-value">${data.hostname || 'N/A'}</div></div>`;
-            html += `<div class="detail-item"><div class="detail-item-label">점검 시간</div><div class="detail-item-value">${data.check_time || 'N/A'}</div></div>`;
-            html += `<div class="detail-item"><div class="detail-item-label">담당자</div><div class="detail-item-value">${data.checker || 'N/A'}</div></div>`;
-            html += `<div class="detail-item ${data.status && data.status.toLowerCase().includes('error') ? 'error-highlight' : 'success-highlight'}"><div class="detail-item-label">상태</div><div class="detail-item-value">${data.status || 'N/A'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">점검 유형</div><div class="detail-item-value">${data.점검유형 || data.check_type || 'WAS'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">호스트명</div><div class="detail-item-value">${data.호스트명 || data.hostname || 'N/A'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">점검 시간</div><div class="detail-item-value">${data.점검시간 || data.check_time || 'N/A'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">담당자</div><div class="detail-item-value">${data.담당자 || data.checker || 'N/A'}</div></div>`;
+            
+            const status = data.상태 || data.status || 'N/A';
+            const statusClass = status.toLowerCase().includes('error') ? 'error-highlight' : 'success-highlight';
+            html += `<div class="detail-item ${statusClass}"><div class="detail-item-label">상태</div><div class="detail-item-value">${status}</div></div>`;
             html += '</div>';
             
             // 점검 결과 상세 (format_was_result로 변환된 모든 필드 표시)

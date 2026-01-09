@@ -1289,16 +1289,72 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
         # 기동 스크립트 날짜
         startup_script_date = script.get("startup_script_date", "N/A")
         
+        # OS 기초 체력 점검 항목 파싱 (WAS에서도 사용 가능하도록 추가)
+        os_basics = results.get("os_basics", {})
+        cpu_model = os_basics.get("cpu_model_name", "N/A")
+        
+        # Swap 상태 파싱
+        swap_status_display = "N/A"
+        try:
+            swap_str = os_basics.get("swap_status", "")
+            if isinstance(swap_str, str) and swap_str.strip():
+                parts = swap_str.split()
+                if len(parts) >= 3:
+                    swap_status_display = f"{parts[1]} / {parts[2]}"
+        except:
+            pass
+        
+        # 루트 디스크 사용률
+        root_disk_usage = os_basics.get("root_disk_usage", "N/A")
+        root_disk_display = f"{root_disk_usage}%" if root_disk_usage != "N/A" and root_disk_usage.isdigit() else root_disk_usage
+        
+        # 전체 디스크 사용 현황 요약
+        all_disk_summary = "N/A"
+        try:
+            all_disk_str = os_basics.get("all_disk_usage", "")
+            if isinstance(all_disk_str, str) and all_disk_str.strip():
+                lines = all_disk_str.split("\n")
+                high_usage_count = 0
+                for line in lines[1:]:
+                    if "%" in line and "Use%" not in line:
+                        parts = line.split()
+                        for part in parts:
+                            if part.endswith("%") and part != "Use%":
+                                try:
+                                    usage = int(part.replace("%", ""))
+                                    if usage >= 70:
+                                        high_usage_count += 1
+                                except: pass
+                all_disk_summary = f"{high_usage_count}개 디스크 70% 이상" if high_usage_count > 0 else "정상"
+        except: pass
+        
+        # 네트워크 및 NTP
+        network_status = "N/A"
+        try:
+            ping_result = os_basics.get("network_ping_result", "")
+            if isinstance(ping_result, str):
+                network_status = "✓ 연결됨" if ("0% packet loss" in ping_result or "0 received" not in ping_result) else "✗ 연결실패"
+        except: pass
+        
+        ntp_status = "N/A"
+        try:
+            ntp_str = os_basics.get("ntp_sync_status", "")
+            if isinstance(ntp_str, str):
+                if "NTP not configured" in ntp_str: ntp_status = "미설정"
+                elif "*" in ntp_str or "^*" in ntp_str: ntp_status = "✓ 동기화됨"
+                else: ntp_status = "설정됨"
+        except: pass
+
         formatted.update({
             # 공통 항목 (19개)
             "설치확인": installation_status,
             "설치경로": installation_path if isinstance(installation_path, str) else "N/A",
-            "CPU모델명": "N/A",  # OS 점검 항목
-            "Swap상태": "N/A",  # OS 점검 항목
-            "루트디스크사용률": "N/A",  # OS 점검 항목
-            "디스크사용현황": "N/A",  # OS 점검 항목
-            "네트워크통신": "N/A",  # OS 점검 항목
-            "NTP동기화": "N/A",  # OS 점검 항목
+            "CPU모델명": cpu_model[:50] if cpu_model != "N/A" else "N/A",
+            "Swap상태": swap_status_display,
+            "루트디스크사용률": root_disk_display,
+            "디스크사용현황": all_disk_summary,
+            "네트워크통신": network_status,
+            "NTP동기화": ntp_status,
             "CPU상위프로세스": cpu_top,
             "메모리상위프로세스": mem_top,
             "프로세스수": str(process_count) if process_count != "N/A" else "N/A",
@@ -1339,6 +1395,9 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "NCIA파일시스템": "N/A",
             "HA상태": "N/A",
         })
+    
+    # 원본 results 객체도 포함 (모달에서 사용하기 위해)
+    formatted["results"] = results
     
     return formatted
 

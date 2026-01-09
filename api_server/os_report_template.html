@@ -1013,9 +1013,9 @@
                 });
                 const isError = status.includes('error') || status.includes('x') || hasNA;
                 const rowClass = isError ? 'error-row' : '';
-                const onclickAttr = isError ? `onclick="showErrorDetails(${index})"` : '';
+                // 모든 행 클릭 가능하도록 변경 (DB 리포트처럼)
                 
-                html += `<tr class="${rowClass}" ${onclickAttr} data-row-index="${index}">`;
+                html += `<tr class="${rowClass}" onclick="showErrorDetails(${index})" style="cursor: pointer;" data-row-index="${index}">`;
                 columns.forEach(col => {
                     html += `<td>${formatCell(row[col], col)}</td>`;
                 });
@@ -1187,31 +1187,55 @@
             const rowData = currentFilteredData[index];
             if (!rowData) return;
             
-            displayErrorDetails(rowData);
+            const modal = document.getElementById('errorModal');
+            const modalBody = document.getElementById('modalBody');
+            
+            // 원본 데이터 가져오기 (API에서 받은 전체 데이터) - DB 리포트와 동일
+            const originalData = allData.find(item => {
+                return item.id === rowData.id || 
+                       (item.호스트명 === rowData.호스트명 && 
+                        item.점검시간 === rowData.점검시간);
+            });
+            
+            if (!originalData) {
+                modalBody.innerHTML = '<p>상세 정보를 불러올 수 없습니다.</p>';
+                modal.classList.add('active');
+                return;
+            }
+            
+            // 원본 데이터 사용 (이미 allData에 있음) - DB 리포트와 동일
+            displayErrorDetails(originalData || rowData);
         }
         
         function displayErrorDetails(data) {
             const modalBody = document.getElementById('modalBody');
             const results = data.results || {};
+            const checkType = data.check_type || data.점검유형 || 'OS';
             
             let html = '';
             
-            // 기본 정보
+            // 기본 정보 - DB 리포트와 동일
             html += '<div class="detail-section">';
             html += '<h3>기본 정보</h3>';
-            html += `<div class="detail-item"><div class="detail-item-label">점검 유형</div><div class="detail-item-value">OS</div></div>`;
-            html += `<div class="detail-item"><div class="detail-item-label">호스트명</div><div class="detail-item-value">${data.hostname || 'N/A'}</div></div>`;
-            html += `<div class="detail-item"><div class="detail-item-label">점검 시간</div><div class="detail-item-value">${data.check_time || 'N/A'}</div></div>`;
-            html += `<div class="detail-item"><div class="detail-item-label">담당자</div><div class="detail-item-value">${data.checker || 'N/A'}</div></div>`;
-            html += `<div class="detail-item ${data.status && data.status.toLowerCase().includes('error') ? 'error-highlight' : 'success-highlight'}"><div class="detail-item-label">상태</div><div class="detail-item-value">${data.status || 'N/A'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">점검 유형</div><div class="detail-item-value">${checkType.toUpperCase()}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">호스트명</div><div class="detail-item-value">${data.hostname || data.호스트명 || 'N/A'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">점검 시간</div><div class="detail-item-value">${data.check_time || data.점검시간 || 'N/A'}</div></div>`;
+            html += `<div class="detail-item"><div class="detail-item-label">담당자</div><div class="detail-item-value">${data.checker || data.담당자 || 'N/A'}</div></div>`;
+            html += `<div class="detail-item ${data.status && data.status.toLowerCase().includes('error') ? 'error-highlight' : 'success-highlight'}"><div class="detail-item-label">상태</div><div class="detail-item-value">${data.status || data.상태 || 'N/A'}</div></div>`;
             html += '</div>';
             
-            // 점검 결과 상세
+            // 점검 결과 상세 - DB 리포트와 동일 (포맷된 데이터의 모든 필드 표시)
             html += '<div class="detail-section">';
             html += '<h3>점검 결과 상세</h3>';
             
-            // results 객체의 모든 항목 표시
-            for (const [key, value] of Object.entries(results)) {
+            // 포맷된 데이터의 모든 항목 표시 (기본 정보 제외) - WAS 리포트처럼
+            const excludeKeys = ['id', 'check_type', 'hostname', 'check_time', 'checker', 'status', 'created_at', 'results'];
+            for (const [key, value] of Object.entries(data)) {
+                // 기본 정보는 이미 표시했으므로 제외
+                if (excludeKeys.includes(key) || key === '점검유형' || key === '호스트명' || key === '점검시간' || key === '담당자' || key === '상태') {
+                    continue;
+                }
+                
                 let displayValue = '';
                 let isError = false;
                 
