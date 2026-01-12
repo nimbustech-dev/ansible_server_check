@@ -259,6 +259,7 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "점검유형": check_type.upper(),
         "호스트명": result.get("hostname", "N/A"),
         "점검시간": format_check_time(result.get("check_time", "N/A")),
+        "check_time": result.get("check_time", "N/A"),  # 원본 날짜 (차트용)
         "담당자": result.get("checker", "N/A"),
         "상태": result.get("status", "N/A"),
     }

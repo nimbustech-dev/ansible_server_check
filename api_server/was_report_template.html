@@ -1010,16 +1010,27 @@
             // 일별 추이 차트 업데이트
             const dateMap = {};
             data.forEach(row => {
-                const checkTime = row.점검시간 || row.check_time;
+                // 원본 날짜 우선 사용 (차트용), 없으면 포맷된 날짜 시도
+                const checkTime = row.check_time || row.점검시간;
                 if (checkTime) {
                     try {
-                        const date = new Date(checkTime);
-                        const dateStr = date.toLocaleDateString('ko-KR', { 
-                            year: 'numeric',
-                            month: '2-digit', 
-                            day: '2-digit' 
-                        });
-                        dateMap[dateStr] = (dateMap[dateStr] || 0) + 1;
+                        let date;
+                        // ISO 8601 형식인 경우 (원본 날짜)
+                        if (typeof checkTime === 'string' && (checkTime.includes('T') || checkTime.includes('Z'))) {
+                            date = new Date(checkTime);
+                        } else {
+                            // 포맷된 날짜인 경우 파싱 시도
+                            date = new Date(checkTime);
+                        }
+                        
+                        if (!isNaN(date.getTime())) {
+                            const dateStr = date.toLocaleDateString('ko-KR', { 
+                                year: 'numeric',
+                                month: '2-digit', 
+                                day: '2-digit' 
+                            });
+                            dateMap[dateStr] = (dateMap[dateStr] || 0) + 1;
+                        }
                     } catch (e) {
                         console.error('Date parsing error:', e, checkTime);
                     }

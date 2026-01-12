@@ -1035,21 +1035,57 @@
             // 일별 추이
             const dateMap = {};
             data.forEach(row => {
-                if (row.점검시간) {
+                // 원본 날짜 우선 사용 (차트용), 없으면 포맷된 날짜 시도
+                const checkTime = row.check_time || row.점검시간;
+                if (checkTime) {
                     try {
-                        const date = new Date(row.점검시간);
-                        const dateStr = date.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' });
-                        dateMap[dateStr] = (dateMap[dateStr] || 0) + 1;
-                    } catch (e) {}
+                        let date;
+                        // ISO 8601 형식인 경우 (원본 날짜)
+                        if (typeof checkTime === 'string' && (checkTime.includes('T') || checkTime.includes('Z'))) {
+                            date = new Date(checkTime);
+                        } else {
+                            // 포맷된 날짜인 경우 파싱 시도
+                            date = new Date(checkTime);
+                        }
+                        
+                        if (!isNaN(date.getTime())) {
+                            const dateStr = date.toLocaleDateString('ko-KR', { 
+                                year: 'numeric',
+                                month: '2-digit', 
+                                day: '2-digit' 
+                            });
+                            dateMap[dateStr] = (dateMap[dateStr] || 0) + 1;
+                        }
+                    } catch (e) {
+                        console.error('Date parsing error:', e, checkTime);
+                    }
                 }
             });
             
-            const dates = Object.keys(dateMap).sort();
-            const counts = dates.map(d => dateMap[d]);
+            // 데이터가 없거나 1건일 때 최근 7일 표시
+            let dates = Object.keys(dateMap).sort();
+            let counts = dates.map(d => dateMap[d]);
+            
+            if (dates.length === 0 || dates.length === 1) {
+                const today = new Date();
+                dates = [];
+                counts = [];
+                for (let i = 6; i >= 0; i--) {
+                    const d = new Date(today);
+                    d.setDate(d.getDate() - i);
+                    const dateStr = d.toLocaleDateString('ko-KR', { 
+                        year: 'numeric',
+                        month: '2-digit', 
+                        day: '2-digit' 
+                    });
+                    dates.push(dateStr);
+                    counts.push(dateMap[dateStr] || 0);
+                }
+            }
             
             trendChart.data.labels = dates;
             trendChart.data.datasets[0].data = counts;
-            trendChart.update();
+            trendChart.update('none'); // 애니메이션 없이 업데이트
         }
         
         // 헤더 정보 업데이트

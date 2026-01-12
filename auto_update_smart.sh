@@ -5,7 +5,7 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
-LOG_FILE="/tmp/api_auto_update.log"
+LOG_FILE="$SCRIPT_DIR/api_auto_update.log"
 
 # 로그 함수
 log() {
