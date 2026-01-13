@@ -135,6 +135,43 @@ ansible/
 
 ---
 
+## Ansible 플레이북 설명
+
+이 프로젝트의 점검은 **플레이북(실행 진입점) + 역할(Role, 실제 점검 로직)** 구조로 구성되어 있습니다.
+
+### 플레이북(Entry Point)
+
+- `redhat_check/redhat_check.yml`: **OS 점검** 실행 플레이북
+- `tomcat_check/tomcat_check.yml`: **WAS(Tomcat) 점검** 실행 플레이북
+- `mariadb_check/mariadb_check.yml`: **MariaDB 점검** 실행 플레이북
+- `postgresql_check/postgresql_check.yml`: **PostgreSQL 점검** 실행 플레이북
+- `cubrid_check/cubrid_check.yml`: **CUBRID 점검** 실행 플레이북
+
+각 플레이북은 공통적으로 다음 흐름을 갖습니다.
+
+- **대상 서버 선택**: `-i inventory` 또는 `-i hosts.ini`로 호스트/그룹 결정
+- **점검 수행**: 각 점검 디렉터리의 `roles/<role>/tasks/main.yml`에서 실제 점검 실행
+- **결과 전송**: `common/roles/api_sender`를 호출해 결과(JSON)를 API 서버로 전송
+
+### Role(점검 로직) 구조
+
+점검 항목을 수정/추가할 때는 보통 아래 파일을 수정합니다.
+
+- `*/roles/*/tasks/main.yml`: 실제 점검 명령 실행, 출력 수집/가공
+- `common/roles/api_sender/tasks/main.yml`: 결과 JSON 구성 및 API 전송(공통)
+
+### 실행 예시
+
+```bash
+# 인벤토리(그룹) 기반 실행
+ansible-playbook -i inventory redhat_check/redhat_check.yml
+
+# 특정 인벤토리 파일 기반(원격 서버) 실행
+ansible-playbook -i hosts.ini tomcat_check/tomcat_check.yml
+```
+
+---
+
 ## `api_server/` 내부 주요 파일
 
 - `main.py`: API 엔드포인트, 리포트 서빙, 결과 포맷팅
