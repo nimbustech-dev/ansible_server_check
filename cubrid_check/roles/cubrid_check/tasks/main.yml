@@ -1,0 +1,191 @@
+---
+# 1. 설치 확인
+- name: CUBRID 설치 경로 확인
+  stat:
+    path: "{{ cubrid_home }}"
+  register: cubrid_home_stat
+
+- name: CUBRID 설치 경로 없을 경우 중단
+  fail:
+    msg: "CUBRID 설치 경로를 찾을 수 없습니다: {{ cubrid_home }}"
+  when: not cubrid_home_stat.stat.exists
+
+- name: cubrid 실행 파일 확인
+  stat:
+    path: "{{ cubrid_home }}/bin/cubrid"
+  register: cubrid_bin
+
+- name: cubrid 실행 파일 없을 경우 중단
+  fail:
+    msg: "cubrid 실행 파일이 존재하지 않습니다"
+  when: not cubrid_bin.stat.exists
+
+# 2. 서비스 / 프로세스 상태
+- name: CUBRID 전체 서비스 상태
+  shell: |
+    cubrid service status 2>&1 || echo "Service not running or command failed"
+  register: cubrid_service_status
+  failed_when: false
+  changed_when: false
+
+- name: CUBRID 서버(DB) 상태
+  shell: |
+    cubrid server status 2>&1 || echo "Server not running"
+  register: cubrid_server_status
+  failed_when: false
+  changed_when: false
+
+- name: CUBRID 브로커 상태
+  shell: |
+    cubrid broker status 2>&1 || echo "Broker not running"
+  register: cubrid_broker_status
+  failed_when: false
+  changed_when: false
+
+- name: 서비스 상태 정규화 (빈 문자열 처리)
+  set_fact:
+    cubrid_service_status_normalized: "{{ cubrid_service_status.stdout | default('') | trim | default('Service status unknown', true) }}"
+    cubrid_server_status_normalized: "{{ cubrid_server_status.stdout | default('') | trim | default('Server not running', true) }}"
+    cubrid_broker_status_normalized: "{{ cubrid_broker_status.stdout | default('') | trim | default('Broker not running', true) }}"
+
+- name: CUBRID 관리 프로세스(cub_admin) 확인
+  shell: ps -ef | grep cub_admin | egrep -v grep
+  register: cubrid_admin_proc
+  failed_when: false
+  changed_when: false
+
+- name: CUBRID 브로커 프로세스 개수
+  shell: pgrep -f broker | wc -l
+  register: cubrid_broker_count
+  failed_when: false
+  changed_when: false
+
+# 3. OS 리소스
+- name: CUBRID 전체 프로세스 개수
+  shell: pgrep -f cubrid | wc -l
+  register: cubrid_proc_count
+  failed_when: false
+  changed_when: false
+
+- name: CPU 사용률 상위 프로세스 (CUBRID만)
+  shell: ps aux --sort=-%cpu | grep cubrid | egrep -v grep | head -5
+  register: cubrid_cpu_usage
+  failed_when: false
+  changed_when: false
+
+- name: 메모리 사용률 상위 프로세스 (CUBRID만)
+  shell: ps aux --sort=-%mem | grep cubrid | egrep -v grep | head -5
+  register: cubrid_mem_usage
+  failed_when: false
+  changed_when: false
+
+- name: CPU 사용률 상위 프로세스 (전체 시스템)
+  shell: ps aux --sort=-%cpu | head -6 | tail -5 | awk '{printf "%-10s %6s%% %s\n", $11, $3, $12}'
+  register: cpu_top_processes
+  failed_when: false
+  changed_when: false
+
+- name: 메모리 사용률 상위 프로세스 (전체 시스템)
+  shell: ps aux --sort=-%mem | head -6 | tail -5 | awk '{printf "%-10s %6s%% %s\n", $11, $4, $12}'
+  register: mem_top_processes
+  failed_when: false
+  changed_when: false
+
+# 4. DB 상태 / 테이블스페이스
+- name: databases.txt 확인
+  stat:
+    path: "{{ cubrid_home }}/conf/databases.txt"
+  register: databases_txt
+
+- name: 데이터베이스 목록 파싱
+  shell: grep -v '^\s*#' {{ cubrid_home }}/conf/databases.txt | awk '{print $1}'
+  register: db_list
+  when: databases_txt.stat.exists
+  failed_when: false
+  changed_when: false
+
+- name: DB 접속 점검
+  command: csql -u dba {{ item }} -c "select count(*) from db_class;"
+  loop: "{{ db_list.stdout_lines | default([]) }}"
+  register: csql_result
+  when: "'is running' in cubrid_server_status.stdout"
+  failed_when: false
+  changed_when: false
+
+- name: 테이블스페이스 사용률 점검
+  shell: |
+    for db in {{ db_list.stdout_lines | default([]) | join(' ') }}; do
+      echo "### DB: $db"
+      cubrid spacedb ${db}@localhost
+    done
+  register: cubrid_spacedb
+  when: db_list is defined and db_list.stdout != ""
+  failed_when: false
+  changed_when: false
+
+# 5. 백업 / 로그
+- name: /NCIA 파일시스템 사용률
+  shell: df -h | grep " /NCIA"
+  register: ncia_df
+  failed_when: false
+  changed_when: false
+
+# 6. HA
+- name: CUBRID HA 상태 점검
+  command: cubrid hb status
+  register: cubrid_ha_status
+  failed_when: false
+  changed_when: false
+
+# 7. OS 기초 체력 점검 (DB 서버 운영에 필수적인 항목)
+# CPU 모델명: DB 서버 하드웨어 스펙 확인, 성능 분석 및 용량 계획에 필요
+- name: Get CPU model name
+  shell: |
+    lscpu | grep "Model name" | awk -F: '{print $2}' | xargs
+  register: cpu_model_name
+  changed_when: false
+  failed_when: false
+
+# Swap 상태: DB 서버에서 Swap 사용은 성능 저하 신호. 메모리 부족 시 Swap 사용되면 쿼리 성능 급격히 저하
+- name: Check Swap status
+  shell: free -h | grep Swap
+  register: swap_status
+  changed_when: false
+  failed_when: false
+
+# 디스크(/) 사용률: 루트 디스크가 가득 차면 시스템 로그, 임시 파일 생성 불가로 DB 서비스 장애 가능
+- name: Check root disk usage
+  shell: df -h / | awk 'NR==2 {print $5}' | tr -d '%'
+  register: root_disk_usage
+  changed_when: false
+  failed_when: false
+
+# 전체 디스크 사용 현황: DB 데이터 디렉토리 외 다른 디스크 사용률 확인. 전체 디스크 상황 파악 필요
+- name: Check all disk usage
+  shell: df -h
+  register: all_disk_usage
+  changed_when: false
+  failed_when: false
+
+# 외부 네트워크 통신: DB 백업, 복제, 모니터링, 패키지 업데이트 등에 외부 네트워크 연결 필요
+- name: Test external network connectivity
+  shell: ping -c 2 8.8.8.8
+  register: network_ping_result
+  changed_when: false
+  failed_when: false
+  ignore_errors: yes
+
+# 시간 동기화(NTP): DB 서버 시간 불일치는 트랜잭션 로그 순서, 복제 동기화, 백업 일관성에 심각한 문제 발생
+- name: Check NTP synchronization
+  shell: chronyc sources -v 2>/dev/null || echo "NTP not configured"
+  register: ntp_sync_status
+  changed_when: false
+  failed_when: false
+  ignore_errors: yes
+
+# 8. 리포트 생성
+- name: CUBRID 통합 점검 리포트 생성
+  template:
+    src: report.j2
+    dest: /tmp/cubrid_check_report.txt
+

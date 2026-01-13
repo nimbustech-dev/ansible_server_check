@@ -1,0 +1,50 @@
+---
+- name: "Redhat OS 점검 및 API 전송"
+  hosts: all
+  become: no
+  gather_facts: yes
+
+  # API 설정 파일 로드 (없어도 기본값 사용)
+  pre_tasks:
+    - name: Load API config if exists
+      include_vars:
+        file: ../config/api_config.yml
+      failed_when: false
+      ignore_errors: yes
+    
+    # 실행 PC의 호스트명 가져오기 (호스트명 자동 설정용)
+    - name: Get local machine hostname
+      shell: hostname
+      register: local_hostname
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+      failed_when: false
+    
+    # 실행 PC에 따라 호스트명 자동 설정
+    - name: Set hostname based on execution PC
+      set_fact:
+        auto_hostname: "{{ 'Taehwan' if 'DESKTOP-JAC7QHN' in local_hostname.stdout else ('Hana-PC' if 'Hana' in local_hostname.stdout or 'hana' in local_hostname.stdout else inventory_hostname) }}"
+      run_once: true
+
+  vars:
+    # config 파일이 없을 경우 기본값
+    api_server:
+      url: "{{ api_server.url | default('http://192.168.0.18:8000/api/checks') }}"
+      timeout: "{{ api_server.timeout | default(30) }}"
+      retry_count: "{{ api_server.retry_count | default(3) }}"
+
+  roles:
+    - redhat_check
+
+  # role 실행 후 API 전송
+  post_tasks:
+    - name: Include API sender tasks
+      include_tasks: "{{ playbook_dir }}/../common/roles/api_sender/tasks/main.yml"
+      vars:
+        check_type: "os"
+        checker_name: "강하나"
+        hostname: "{{ auto_hostname | default(inventory_hostname) }}"
+        check_results: "{{ redhat_check_results }}"
+
+

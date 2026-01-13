@@ -1,0 +1,100 @@
+- name: CUBRID 통합 운영 점검 플레이북
+  hosts: cubrid
+  become: no
+  gather_facts: yes
+  
+  vars:
+    # CUBRID 경로 자동 탐지 또는 수동 설정
+    # 환경변수 CUBRID가 있으면 사용, 없으면 기본값 사용
+    cubrid_home: "{{ ansible_env.CUBRID | default('/home/taehwan/CUBRID-11.4.2.1818-1ee31a5-Linux.x86_64') }}"
+    
+    # config 파일이 없을 경우 기본값
+    api_server:
+      url: "{{ api_server.url | default('http://192.168.0.18:8000/api/checks') }}"
+      timeout: "{{ api_server.timeout | default(30) }}"
+      retry_count: "{{ api_server.retry_count | default(3) }}"
+  
+  # API 설정 파일 로드 및 CUBRID 경로 자동 탐지
+  pre_tasks:
+    - name: Load API config if exists
+      include_vars:
+        file: ../config/api_config.yml
+      failed_when: false
+      ignore_errors: yes
+    
+    - name: Auto-detect CUBRID home if not set
+      shell: |
+        # 환경변수 확인
+        if [ -n "$CUBRID" ] && [ -d "$CUBRID" ]; then
+          echo "$CUBRID"
+        # 기본 경로 확인
+        elif [ -d "{{ cubrid_home }}" ]; then
+          echo "{{ cubrid_home }}"
+        # 홈 디렉토리에서 찾기
+        else
+          find ~ -maxdepth 2 -type d -name "CUBRID-*" 2>/dev/null | head -1
+        fi
+      register: detected_cubrid_home
+      changed_when: false
+      failed_when: false
+      when: not ansible_env.CUBRID | default('') | length > 0
+    
+    - name: Set cubrid_home from detected path
+      set_fact:
+        cubrid_home: "{{ detected_cubrid_home.stdout | default(cubrid_home) | trim }}"
+      when: 
+        - detected_cubrid_home.stdout is defined
+        - detected_cubrid_home.stdout | trim | length > 0
+
+  environment:
+    CUBRID: "{{ cubrid_home }}"
+    CUBRID_DATABASES: "{{ cubrid_home }}/conf"
+    PATH: "{{ cubrid_home }}/bin:{{ ansible_env.PATH }}"
+
+  roles:
+    - cubrid_check
+
+  # role 실행 후 API 전송
+  post_tasks:
+    - name: Include API sender tasks
+      include_tasks: "{{ playbook_dir }}/../common/roles/api_sender/tasks/main.yml"
+      vars:
+        check_type: "cubrid"
+        checker_name: "성태환"
+        hostname: "Taehwan"
+        check_results:
+          installation:
+            cubrid_home: "{{ cubrid_home }}"
+            home_exists: "{{ cubrid_home_stat.stat.exists | default(false) }}"
+            bin_exists: "{{ cubrid_bin.stat.exists | default(false) }}"
+          service_status:
+            service: "{{ cubrid_service_status_normalized | default(cubrid_service_status.stdout | default('Service status unknown')) }}"
+            server: "{{ cubrid_server_status_normalized | default(cubrid_server_status.stdout | default('Server not running')) }}"
+            broker: "{{ cubrid_broker_status_normalized | default(cubrid_broker_status.stdout | default('Broker not running')) }}"
+          processes:
+            admin_proc: "{{ cubrid_admin_proc.stdout | default('N/A') }}"
+            broker_count: "{{ cubrid_broker_count.stdout | default('N/A') }}"
+            total_proc_count: "{{ cubrid_proc_count.stdout | default('N/A') }}"
+          os_resources:
+            cpu_usage_top: "{{ cubrid_cpu_usage.stdout | default('N/A') }}"
+            mem_usage_top: "{{ cubrid_mem_usage.stdout | default('N/A') }}"
+            cpu_top_processes: "{{ cpu_top_processes.stdout | default('N/A') }}"
+            mem_top_processes: "{{ mem_top_processes.stdout | default('N/A') }}"
+          database:
+            db_list: "{{ db_list.stdout | default('N/A') }}"
+            databases_txt_exists: "{{ databases_txt.stat.exists | default(false) }}"
+            csql_results: "{{ csql_result.results | default([]) | to_json }}"
+          tablespace:
+            spacedb_info: "{{ cubrid_spacedb.stdout | default('N/A') }}"
+          filesystem:
+            ncia_usage: "{{ ncia_df.stdout | default('N/A') }}"
+          ha:
+            ha_status: "{{ cubrid_ha_status.stdout | default('N/A') }}"
+          os_basics:
+            cpu_model_name: "{{ cpu_model_name.stdout | default('N/A') }}"
+            swap_status: "{{ swap_status.stdout | default('N/A') }}"
+            root_disk_usage: "{{ root_disk_usage.stdout | default('N/A') }}"
+            all_disk_usage: "{{ all_disk_usage.stdout | default('N/A') }}"
+            network_ping_result: "{{ network_ping_result.stdout | default('N/A') }}"
+            ntp_sync_status: "{{ ntp_sync_status.stdout | default('N/A') }}"
+

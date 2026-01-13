@@ -1,0 +1,97 @@
+---
+# 강하나 Redhat OS 점검 role
+
+- name: 1. CPU 모델명 확인
+  shell: "lscpu | grep 'Model name' | awk -F: '{print $2}' | xargs"
+  register: cpu_info
+  changed_when: false
+  failed_when: false
+
+- name: 2. 메모리(Swap) 상태 점검
+  shell: "free -h | grep Swap"
+  register: mem_check
+  failed_when: mem_check.stdout == ""
+  changed_when: false
+
+- name: 3. 디스크(/) 사용률 점검
+  shell: "df -h / | awk 'NR==2 {print $5}' | tr -d '%'"
+  register: disk_usage
+  failed_when: (disk_usage.stdout | int) >= 80
+  ignore_errors: yes
+  changed_when: false
+
+- name: 3-1. 전체 디스크 사용 현황
+  shell: "df -h"
+  register: disk_all
+  changed_when: false
+  failed_when: false
+
+- name: 4. 외부 네트워크(Google) 통신 점검
+  shell: "ping -c 2 8.8.8.8"
+  register: ping_result
+  failed_when: "'0% packet loss' not in ping_result.stdout"
+  ignore_errors: yes
+  changed_when: false
+
+- name: 5. 시간 동기화(NTP) 점검
+  shell: "chronyc sources -v"
+  register: ntp_check
+  failed_when: "'^*' not in ntp_check.stdout"
+  ignore_errors: yes
+  changed_when: false
+
+# CPU / 메모리 상세 사용률 및 상위 프로세스 (엑셀 기준)
+
+- name: 6. CPU 사용률 요약
+  shell: >
+    top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1"%"}'
+  register: cpu_usage_percent
+  changed_when: false
+  failed_when: false
+
+- name: 7. CPU 사용률 상위 프로세스
+  shell: "ps aux --sort=-%cpu | head -4"
+  register: cpu_top_processes
+  changed_when: false
+  failed_when: false
+
+- name: 8. 메모리 사용률 요약
+  shell: "free -h | grep Mem"
+  register: mem_usage
+  changed_when: false
+  failed_when: false
+
+- name: 9. 메모리 사용률 상위 프로세스
+  shell: "ps aux --sort=-%mem | head -4"
+  register: mem_top_processes
+  changed_when: false
+  failed_when: false
+
+- name: Redhat OS check report 생성
+  template:
+    src: report.j2
+    dest: /tmp/redhat_os_check_report.txt
+  failed_when: false
+  ignore_errors: yes
+
+# 점검 결과를 하나의 딕셔너리로 정리
+- name: Aggregate Redhat OS check results
+  set_fact:
+    redhat_check_results:
+      cpu:
+        model: "{{ cpu_info.stdout | default('N/A') }}"
+        usage_percent: "{{ cpu_usage_percent.stdout | default('N/A') }}"
+        top_processes: "{{ cpu_top_processes.stdout | default('N/A') }}"
+      memory:
+        swap: "{{ mem_check.stdout | default('N/A') }}"
+        usage: "{{ mem_usage.stdout | default('N/A') }}"
+        top_processes: "{{ mem_top_processes.stdout | default('N/A') }}"
+      disk:
+        root_usage_percent: "{{ disk_usage.stdout | default('N/A') }}"
+        all: "{{ disk_all.stdout | default('N/A') }}"
+      network:
+        ping_result: "{{ ping_result.stdout | default('N/A') }}"
+      ntp:
+        status: "{{ ntp_check.stdout | default('N/A') }}"
+
+
