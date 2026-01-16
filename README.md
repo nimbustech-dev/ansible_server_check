@@ -222,7 +222,56 @@ ansible-playbook -i hosts.ini tomcat_check/tomcat_check.yml
 
 ---
 
-**마지막 업데이트**: 2026년 1월 13일
+## 사용된 라이브러리 및 오픈소스
+
+이 프로젝트는 다음 오픈소스 라이브러리를 사용합니다:
+
+### Backend (Python)
+
+- **[FastAPI](https://fastapi.tiangolo.com/)** (v0.104.1) - MIT License
+  - 고성능 웹 프레임워크
+  - GitHub: https://github.com/tiangolo/fastapi
+
+- **[Uvicorn](https://www.uvicorn.org/)** (v0.24.0) - BSD License
+  - ASGI 서버
+  - GitHub: https://github.com/encode/uvicorn
+
+- **[Pydantic](https://docs.pydantic.dev/)** (v2.5.0) - MIT License
+  - 데이터 검증 라이브러리
+  - GitHub: https://github.com/pydantic/pydantic
+
+- **[SQLAlchemy](https://www.sqlalchemy.org/)** (v2.0.23) - MIT License
+  - ORM 및 데이터베이스 툴킷
+  - GitHub: https://github.com/sqlalchemy/sqlalchemy
+
+- **[python-multipart](https://github.com/andrew-d/python-multipart)** (v0.0.6) - Apache 2.0 License
+  - 멀티파트 폼 데이터 파싱
+  - GitHub: https://github.com/andrew-d/python-multipart
+
+- **[requests](https://requests.readthedocs.io/)** (v2.31.0) - Apache 2.0 License
+  - HTTP 라이브러리
+  - GitHub: https://github.com/psf/requests
+
+- **[psycopg2-binary](https://www.psycopg.org/)** (v2.9.9) - LGPL/PostgreSQL License
+  - PostgreSQL 어댑터 (선택사항)
+  - GitHub: https://github.com/psycopg/psycopg2
+
+### Frontend (JavaScript)
+
+- **[Chart.js](https://www.chartjs.org/)** (v4.4.0) - MIT License
+  - 차트 및 그래프 라이브러리
+  - CDN: https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js
+  - GitHub: https://github.com/chartjs/Chart.js
+
+### Automation
+
+- **[Ansible](https://www.ansible.com/)** (v2.9+) - GPLv3 License
+  - 인프라 자동화 도구
+  - GitHub: https://github.com/ansible/ansible
+
+---
+
+**마지막 업데이트**: 2026년 1월 16일
 
 ## 👤 작성자
 
