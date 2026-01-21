@@ -29,11 +29,12 @@
       failed_when: false
     
     # 호스트명 자동 설정: 
-    # - 원격 서버 점검 시 → inventory_hostname 사용 (dongguk_server1 등)
+    # - ansible_hostname_display 변수가 있으면 우선 사용 (hosts.ini에서 지정한 커스텀 호스트명)
+    # - 원격 서버 점검 시 → inventory_hostname 사용 (nimbus-server, dongguk_server1 등)
     # - 로컬 점검 시 → 실행 PC 호스트명 기반으로 설정
     - name: Set hostname based on inventory or execution PC
       set_fact:
-        auto_hostname: "{{ inventory_hostname if target_hostname.stdout != local_hostname.stdout else ('Taehwan' if 'DESKTOP-JAC7QHN' in local_hostname.stdout else ('Hana-PC' if 'Hana' in local_hostname.stdout or 'hana' in local_hostname.stdout else inventory_hostname)) }}"
+        auto_hostname: "{{ ansible_hostname_display | default(inventory_hostname if target_hostname.stdout != local_hostname.stdout else ('Taehwan' if 'DESKTOP-JAC7QHN' in local_hostname.stdout else ('Hana-PC' if 'Hana' in local_hostname.stdout or 'hana' in local_hostname.stdout else inventory_hostname))) }}"
       run_once: true
   
   vars:
