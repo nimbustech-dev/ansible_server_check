@@ -5,7 +5,7 @@ set -e
 
 # 서버 정보
 SERVER_HOST="27.96.129.114"
-SERVER_PORT="1025"
+SERVER_PORT="4433"
 SERVER_USER="root"
 SSH_KEY="/home/sth0824/.ssh/nimso2026.pem"
 REMOTE_DIR="/opt/ansible-monitoring"

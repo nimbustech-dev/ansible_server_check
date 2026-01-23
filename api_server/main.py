@@ -1775,10 +1775,12 @@ async def get_was_checks_data(limit: int = 1000):
 
 if __name__ == "__main__":
     # 개발 서버 실행
+    import os
+    api_port = int(os.getenv("API_PORT", 8000))  # 환경 변수에서 포트 읽기, 기본값 8000
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
+        port=api_port,
         reload=True  # 개발 모드: 코드 변경 시 자동 재시작
     )
 

@@ -5,7 +5,7 @@ set -e
 
 # 서버 정보
 SERVER_HOST="27.96.129.114"
-SERVER_PORT="1025"
+SERVER_PORT="4433"
 SERVER_USER="root"
 SSH_KEY="/home/sth0824/.ssh/nimso2026.pem"
 REMOTE_DIR="/opt/ansible-monitoring"
@@ -113,6 +113,13 @@ SERVICE_EOF
         pip install --upgrade pip > /dev/null 2>&1
         pip install -r requirements.txt > /dev/null 2>&1
         echo "✅ 가상환경 생성 및 패키지 설치 완료"
+    else
+        # 가상환경이 있으면 패키지만 업데이트
+        cd ${REMOTE_DIR}_${API_PORT}/api_server
+        source venv/bin/activate
+        pip install --upgrade pip > /dev/null 2>&1
+        pip install -r requirements.txt > /dev/null 2>&1
+        echo "✅ 패키지 업데이트 완료"
     fi
 
     # 서비스 등록 및 시작
