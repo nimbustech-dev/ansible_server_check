@@ -13,6 +13,8 @@ class CheckResult(Base):
     """점검 결과 테이블 모델"""
     __tablename__ = "check_results"
     
+    # PostgreSQL의 경우 시퀀스가 데이터베이스에 생성되어 있어야 함
+    # fix_postgresql_sequence.sh 스크립트로 시퀀스를 생성하고 연결해야 함
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     check_type = Column(String(50), index=True, nullable=False)  # "os", "was", "mariadb" 등
     hostname = Column(String(255), index=True, nullable=False)
