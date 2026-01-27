@@ -720,6 +720,16 @@
                 </div>
                 
                 <div class="filter-group">
+                    <label>날짜</label>
+                    <select id="filterDate" onchange="applyFilters()">
+                        <option value="">전체</option>
+                        <option value="today">오늘</option>
+                        <option value="week">최근 7일</option>
+                        <option value="month">최근 30일</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
                     <label>&nbsp;</label>
                     <button class="btn btn-secondary" onclick="clearFilters()">필터 초기화</button>
                 </div>
@@ -823,7 +833,8 @@
                 
                 if (data.success && data.results) {
                     allData = data.results;
-                    applyFilters();
+                    console.log(`✅ OS 점검 데이터 로드 완료: ${allData.length}개`);
+                    applyAllFilters();
                     updateStats(allData);
                     updateCharts(allData);
                     
@@ -852,6 +863,21 @@
         function applyFilters() {
             const filterHostname = document.getElementById('filterHostname').value.toLowerCase();
             const filterStatus = document.getElementById('filterStatus').value.toLowerCase();
+            const filterDate = document.getElementById('filterDate').value;
+            
+            const now = new Date();
+            let dateFilter = null;
+            
+            if (filterDate === 'today') {
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                dateFilter = (date) => new Date(date) >= today;
+            } else if (filterDate === 'week') {
+                const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                dateFilter = (date) => new Date(date) >= weekAgo;
+            } else if (filterDate === 'month') {
+                const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                dateFilter = (date) => new Date(date) >= monthAgo;
+            }
             
             let filtered = allData.filter(row => {
                 if (filterHostname) {
@@ -868,20 +894,62 @@
                     }
                 }
                 
+                // 날짜 필터 (원본 ISO8601 형식 우선 사용)
+                if (dateFilter) {
+                    // check_time 또는 created_at을 우선 사용 (ISO8601 형식)
+                    const checkDate = row.check_time || row.created_at || row.점검시간;
+                    if (!checkDate) {
+                        return false;
+                    }
+                    
+                    // ISO8601 형식인 경우 직접 파싱, 포맷팅된 한국어 날짜인 경우 변환 시도
+                    let dateObj;
+                    if (checkDate.includes('T') || checkDate.includes('Z') || /^\d{4}-\d{2}-\d{2}/.test(checkDate)) {
+                        // ISO8601 형식
+                        dateObj = new Date(checkDate);
+                    } else {
+                        // 포맷팅된 한국어 날짜 (예: "2026. 1. 22. 오전 10:23:39")
+                        // 점검시간 필드에서 원본 check_time 사용 시도
+                        const originalTime = row.check_time || row.created_at;
+                        if (originalTime) {
+                            dateObj = new Date(originalTime);
+                        } else {
+                            // 파싱 실패 시 해당 행 제외
+                            return false;
+                        }
+                    }
+                    
+                    if (isNaN(dateObj.getTime()) || !dateFilter(dateObj)) {
+                        return false;
+                    }
+                }
+                
                 return true;
             });
             
             currentFilteredData = filtered;
-            renderTable(filtered);
-            updateHeaderInfo(filtered.length);
-            updateStats(filtered);
-            updateCharts(filtered);
+            // 페이지네이션 적용
+            if (typeof applyPagination === 'function') {
+                applyPagination(filtered);
+            } else {
+                // 페이지네이션이 없으면 직접 렌더링
+                renderTable(filtered);
+                updateHeaderInfo(filtered.length);
+                updateStats(filtered);
+                updateCharts(filtered);
+            }
+        }
+        
+        // applyAllFilters 함수 추가 (페이지네이션 지원)
+        function applyAllFilters() {
+            applyFilters();
         }
         
         // 필터 초기화
         function clearFilters() {
             document.getElementById('filterHostname').value = '';
             document.getElementById('filterStatus').value = '';
+            document.getElementById('filterDate').value = '';
             applyFilters();
         }
         

@@ -13,7 +13,7 @@ class CheckResult(Base):
     """점검 결과 테이블 모델"""
     __tablename__ = "check_results"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     check_type = Column(String(50), index=True, nullable=False)  # "os", "was", "mariadb" 등
     hostname = Column(String(255), index=True, nullable=False)
     check_time = Column(String(50), nullable=False)  # ISO8601 형식

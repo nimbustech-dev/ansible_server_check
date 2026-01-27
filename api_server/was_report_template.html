@@ -826,7 +826,10 @@
         async function loadData() {
             try {
                 // WAS 데이터 로드 (format_was_result로 변환된 데이터)
-                const response = await fetch('/api/was-checks/data?limit=1000');
+                const response = await fetch('/api/was-checks/data?limit=1000&t=' + Date.now(), {
+                    cache: 'no-cache',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
                 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -836,22 +839,20 @@
                 console.log('API 응답:', data);
                 
                 if (data.success && data.results) {
-                    // 이수민 담당자 데이터만 필터링
-                    allData = data.results.filter(row => {
-                        const checker = String(row.담당자 || row.checker || '').trim();
-                        return checker === '이수민' || checker === '';
-                    });
+                    // 모든 데이터 사용 (필터링 제거)
+                    allData = data.results;
                     
-                    console.log(`총 ${data.results.length}건 중 이수민 담당자 데이터: ${allData.length}건`);
+                    console.log(`✅ WAS 점검 데이터 로드 완료: ${allData.length}개`);
                     
-                    // 최신순 정렬 (점검시간 기준)
+                    // 최신순 정렬 (created_at 우선, check_time 보조)
                     allData.sort((a, b) => {
-                        const dateA = new Date(a.점검시간 || a.check_time || a.created_at || 0);
-                        const dateB = new Date(b.점검시간 || b.check_time || b.created_at || 0);
+                        // created_at을 우선 사용 (데이터베이스 저장 시간)
+                        const dateA = new Date(a.created_at || a.check_time || a.점검시간 || 0);
+                        const dateB = new Date(b.created_at || b.check_time || b.점검시간 || 0);
                         return dateB - dateA;
                     });
                     
-                    applyFilters();
+                    applyAllFilters();
                     updateStats(allData);
                     updateCharts(allData);
                     
@@ -914,10 +915,32 @@
                     }
                 }
                 
-                // 날짜 필터
+                // 날짜 필터 (원본 ISO8601 형식 우선 사용)
                 if (dateFilter) {
-                    const checkDate = row.점검시간 || row.check_time || row.created_at;
-                    if (!checkDate || !dateFilter(checkDate)) {
+                    // check_time 또는 created_at을 우선 사용 (ISO8601 형식)
+                    const checkDate = row.check_time || row.created_at || row.점검시간;
+                    if (!checkDate) {
+                        return false;
+                    }
+                    
+                    // ISO8601 형식인 경우 직접 파싱, 포맷팅된 한국어 날짜인 경우 변환 시도
+                    let dateObj;
+                    if (checkDate.includes('T') || checkDate.includes('Z') || /^\d{4}-\d{2}-\d{2}/.test(checkDate)) {
+                        // ISO8601 형식
+                        dateObj = new Date(checkDate);
+                    } else {
+                        // 포맷팅된 한국어 날짜 (예: "2026. 1. 22. 오전 10:23:39")
+                        // 점검시간 필드에서 원본 check_time 사용 시도
+                        const originalTime = row.check_time || row.created_at;
+                        if (originalTime) {
+                            dateObj = new Date(originalTime);
+                        } else {
+                            // 파싱 실패 시 해당 행 제외
+                            return false;
+                        }
+                    }
+                    
+                    if (isNaN(dateObj.getTime()) || !dateFilter(dateObj)) {
                         return false;
                     }
                 }
@@ -926,10 +949,21 @@
             });
             
             currentFilteredData = filtered;
-            renderTable(filtered);
-            updateHeaderInfo(filtered.length);
-            updateStats(filtered);
-            updateCharts(filtered);
+            // 페이지네이션 적용
+            if (typeof applyPagination === 'function') {
+                applyPagination(filtered);
+            } else {
+                // 페이지네이션이 없으면 직접 렌더링
+                renderTable(filtered);
+                updateHeaderInfo(filtered.length);
+                updateStats(filtered);
+                updateCharts(filtered);
+            }
+        }
+        
+        // applyAllFilters 함수 추가 (페이지네이션 지원)
+        function applyAllFilters() {
+            applyFilters();
         }
         
         // 필터 초기화

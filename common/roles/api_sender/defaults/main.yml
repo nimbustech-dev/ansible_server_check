@@ -8,6 +8,9 @@ check_results: {}      # 점검 결과 데이터 (딕셔너리 형태)
 
 # 선택 변수
 checker_name: "{{ default_checker | default('unknown') }}"
-# API 서버 URL (기본값: http://192.168.0.18:8000/api/checks)
+# API 서버 URL (단일 URL, 하위 호환성용)
 api_server_url: "{{ api_server_url | default(api_server.url | default('http://192.168.0.18:8000/api/checks')) }}"
+# API 서버 URL 리스트 (여러 서버에 전송, 우선 사용)
+# api_server.urls가 있으면 사용, 없으면 api_server.url을 리스트로 변환
+api_server_urls: "{{ api_server_urls | default(api_server.urls | default([])) }}"
 

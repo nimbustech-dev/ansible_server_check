@@ -37,6 +37,9 @@
       retry_count: "{{ api_server.retry_count | default(3) }}"
     # PostgreSQL 접속 비밀번호 (환경 변수 또는 기본값)
     postgresql_password: "{{ lookup('env', 'POSTGRESQL_PASSWORD') | default('nimbus1234') }}"
+    # PostgreSQL 타임아웃 설정
+    postgresql_connect_timeout: 5  # psql 연결 타임아웃 (초)
+    postgresql_task_timeout: 10    # Ansible task 타임아웃 (초)
 
   roles:
     - postgresql_check

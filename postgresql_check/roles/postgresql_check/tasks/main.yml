@@ -10,12 +10,17 @@
       echo "/GCLOUD directory not present"
     fi
   register: dir_tree
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   changed_when: false
   failed_when: false
 
 ################################
 # 1. OS 파일시스템 사용률 점검
 ################################
+- name: Start filesystem check section
+  set_fact:
+    section_start_time: "{{ ansible_date_time.epoch }}"
+  run_once: true
 # 1-1. DB엔진 파일시스템 (데이터 디렉토리)
 - name: Get PostgreSQL data directory
   shell: |
@@ -26,13 +31,15 @@
     elif [ -d "/var/lib/postgresql" ]; then
       find /var/lib/postgresql -maxdepth 2 -type d -name "main" 2>/dev/null | head -1
     # 방법 3: psql로 직접 확인 (실패할 수 있음)
-    elif psql -U postgres -t -c "SHOW data_directory;" 2>/dev/null | head -1 | xargs; then
+    elif export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }} && psql -U postgres -t -c "SHOW data_directory;" 2>/dev/null | head -1 | xargs; then
+      export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
       psql -U postgres -t -c "SHOW data_directory;" 2>/dev/null | head -1 | xargs
     # 기본값
     else
       echo "/var/lib/postgresql"
     fi
   register: pg_data_directory
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   changed_when: false
 
@@ -64,12 +71,14 @@
       echo "Data directory not found"
     fi
   register: db_engine_fs
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   failed_when: false
   changed_when: false
 
 # 1-2. 아카이브(데이터변경) 로그 파일시스템 (WAL 아카이브 디렉토리)
 - name: Get PostgreSQL archive_command or archive directory
   shell: |
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     ARCHIVE_MODE=$(psql -U postgres -t -c "SHOW archive_mode;" 2>/dev/null | xargs || sudo -n -u postgres psql -t -c "SHOW archive_mode;" | xargs)
     if [ "$ARCHIVE_MODE" = "on" ]; then
       ARCHIVE_CMD=$(psql -U postgres -t -c "SHOW archive_command;" 2>/dev/null | xargs || sudo -n -u postgres psql -t -c "SHOW archive_command;" | xargs)
@@ -78,6 +87,7 @@
       echo "/var/lib/pgsql/archive"
     fi
   register: pg_archive_path
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   changed_when: false
 
@@ -96,6 +106,7 @@
       fi
     fi
   register: archive_log_fs
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   failed_when: false
   changed_when: false
 
@@ -104,16 +115,17 @@
   shell: |
     export PGHOST=localhost
     export PGPORT=5432
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
-    LOG_DIRECTORY=$(psql -h localhost -U postgres -t -c "SHOW log_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
+    LOG_DIRECTORY=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SHOW log_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
     if [ -z "$LOG_DIRECTORY" ] || [ "$LOG_DIRECTORY" = "" ] || [ "$LOG_DIRECTORY" = "PGPASSWORD" ]; then
       # ansible_user로 재시도
-      LOG_DIRECTORY=$(psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW log_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "log")
+      LOG_DIRECTORY=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW log_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "log")
     fi
-    DATA_DIR=$(psql -h localhost -U postgres -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
+    DATA_DIR=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
     if [ -z "$DATA_DIR" ] || [ "$DATA_DIR" = "" ] || [ "$DATA_DIR" = "PGPASSWORD" ]; then
       # ansible_user로 재시도
-      DATA_DIR=$(psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "/var/lib/postgresql")
+      DATA_DIR=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "/var/lib/postgresql")
     fi
     if [ "$LOG_DIRECTORY" = "log" ] || [ -z "$LOG_DIRECTORY" ]; then
       echo "${DATA_DIR}/log"
@@ -121,6 +133,7 @@
       echo "$LOG_DIRECTORY"
     fi
   register: pg_log_directory
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   changed_when: false
 
@@ -128,16 +141,17 @@
   shell: |
     export PGHOST=localhost
     export PGPORT=5432
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
     LOG_DIR="{{ pg_log_directory.stdout | default('/var/lib/pgsql/data/log') | trim }}"
     if [ -d "$LOG_DIR" ]; then
       df -h "$LOG_DIR" | tail -1
     else
       # 기본 로그 위치 확인
-      DATA_DIR=$(psql -h localhost -U postgres -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
+      DATA_DIR=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
       if [ -z "$DATA_DIR" ] || [ "$DATA_DIR" = "" ] || [ "$DATA_DIR" = "PGPASSWORD" ]; then
         # ansible_user로 재시도
-        DATA_DIR=$(psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "/var/lib/postgresql")
+        DATA_DIR=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "/var/lib/postgresql")
       fi
       if [ -n "$DATA_DIR" ] && [ "$DATA_DIR" != "" ]; then
         df -h "$DATA_DIR" | tail -1
@@ -146,6 +160,7 @@
       fi
     fi
   register: system_log_fs
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   failed_when: false
   changed_when: false
 
@@ -153,8 +168,14 @@
 - name: Check filesystem usage over 70%
   shell: df -hP | awk '$5+0 > 70 {print}'
   register: fs_usage
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   failed_when: false
   changed_when: false
+
+- name: Log filesystem check duration
+  debug:
+    msg: "Filesystem check completed in {{ (ansible_date_time.epoch | int) - (section_start_time | int) }} seconds"
+  run_once: true
 
 ################################
 # 2. PostgreSQL 서비스 상태
@@ -170,10 +191,15 @@
 - name: Check PostgreSQL listener (5432)
   shell: ss -lntp | grep 5432 || echo "5432 NOT LISTENING"
   register: pg_listener
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
 
 ################################
 # 4. 프로세스 기동 상태 및 DB 접속 상태
 ################################
+- name: Start DB connection check section
+  set_fact:
+    db_check_start_time: "{{ ansible_date_time.epoch }}"
+  run_once: true
 # 4-1. 메인(관리) 프로세스 기동 상태 (서비스 상태로 확인)
 # (이미 #2에서 pg_service로 확인됨)
 
@@ -185,8 +211,9 @@
   shell: |
     export PGHOST=localhost
     export PGPORT=5432
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
-    psql -h localhost -U postgres -t -c "
+    timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "
     SELECT datname,
            usename,
            client_addr,
@@ -194,6 +221,7 @@
            application_name
     FROM pg_stat_activity;" 2>&1 | grep -v "password\|Password" || echo ""
   register: pg_sessions
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   failed_when: false
   changed_when: false
 
@@ -201,11 +229,12 @@
   shell: |
     export PGHOST=localhost
     export PGPORT=5432
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
-    COUNT=$(psql -h localhost -U postgres -t -c "SELECT count(*) FROM pg_stat_activity;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
+    COUNT=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SELECT count(*) FROM pg_stat_activity;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
     if [ -z "$COUNT" ] || [ "$COUNT" = "" ] || [ "$COUNT" = "PGPASSWORD" ]; then
       # ansible_user로 재시도
-      COUNT=$(psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT count(*) FROM pg_stat_activity;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
+      COUNT=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT count(*) FROM pg_stat_activity;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
     fi
     if [ -z "$COUNT" ] || [ "$COUNT" = "" ]; then
       echo "0"
@@ -213,6 +242,7 @@
       echo "$COUNT"
     fi
   register: active_session_count
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   failed_when: false
   changed_when: false
 
@@ -220,15 +250,17 @@
   shell: |
     export PGHOST=localhost
     export PGPORT=5432
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
-    if psql -h localhost -U postgres -c "SELECT 1;" > /dev/null 2>&1; then
+    if timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -c "SELECT 1;" > /dev/null 2>&1; then
       echo "CONNECTED"
-    elif psql -h localhost -U ansible_user -d ansible_checks -c "SELECT 1;" > /dev/null 2>&1; then
+    elif timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -c "SELECT 1;" > /dev/null 2>&1; then
       echo "CONNECTED"
     else
       echo "DISCONNECTED"
     fi
   register: db_connection_status
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   failed_when: false
   changed_when: false
 
@@ -241,6 +273,7 @@
       echo "NOT_RUNNING"
     fi
   register: postgres_process
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   changed_when: false
 
@@ -249,17 +282,18 @@
   shell: |
     export PGHOST=localhost
     export PGPORT=5432
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
     # 복제 상태 확인
-    REPL_STATUS=$(psql -h localhost -U postgres -t -c "SELECT count(*) FROM pg_stat_replication;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
+    REPL_STATUS=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SELECT count(*) FROM pg_stat_replication;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
     if [ -z "$REPL_STATUS" ] || [ "$REPL_STATUS" = "" ] || [ "$REPL_STATUS" = "PGPASSWORD" ]; then
       # ansible_user로 재시도
-      REPL_STATUS=$(psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT count(*) FROM pg_stat_replication;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
+      REPL_STATUS=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT count(*) FROM pg_stat_replication;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
     fi
-    REPL_SLOTS=$(psql -h localhost -U postgres -t -c "SELECT count(*) FROM pg_replication_slots;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
+    REPL_SLOTS=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SELECT count(*) FROM pg_replication_slots;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
     if [ -z "$REPL_SLOTS" ] || [ "$REPL_SLOTS" = "" ] || [ "$REPL_SLOTS" = "PGPASSWORD" ]; then
       # ansible_user로 재시도
-      REPL_SLOTS=$(psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT count(*) FROM pg_replication_slots;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
+      REPL_SLOTS=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT count(*) FROM pg_replication_slots;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
     fi
     
     if [ "$REPL_STATUS" -gt 0 ] || [ "$REPL_SLOTS" -gt 0 ]; then
@@ -271,10 +305,10 @@
       fi
     else
       # 스트리밍 복제 확인
-      STREAMING=$(psql -h localhost -U postgres -t -c "SHOW max_wal_senders;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
+      STREAMING=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SHOW max_wal_senders;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
       if [ -z "$STREAMING" ] || [ "$STREAMING" = "" ] || [ "$STREAMING" = "PGPASSWORD" ]; then
         # ansible_user로 재시도
-        STREAMING=$(psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW max_wal_senders;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
+        STREAMING=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW max_wal_senders;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
       fi
       if [ "$STREAMING" != "0" ] && [ -n "$STREAMING" ]; then
         echo "Replication: Configured (max_wal_senders: ${STREAMING})"
@@ -283,8 +317,14 @@
       fi
     fi
   register: ha_status
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   changed_when: false
+
+- name: Log DB connection check duration
+  debug:
+    msg: "DB connection check completed in {{ (ansible_date_time.epoch | int) - (db_check_start_time | int) }} seconds"
+  run_once: true
 
 ################################
 # 5. OS 리소스 사용률
@@ -332,15 +372,19 @@
 ################################
 - name: Check shared_buffers
   shell: |
-    PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}" psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT current_setting('shared_buffers');" 2>&1 | grep -vE "password|Password|FATAL|WARNING|ERROR" | xargs || echo "N/A"
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
+    timeout {{ postgresql_task_timeout | default(10) }} PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}" psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT current_setting('shared_buffers');" 2>&1 | grep -vE "password|Password|FATAL|WARNING|ERROR" | xargs || echo "N/A"
   register: shared_buffers
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   failed_when: false
 
 - name: Check max_connections
   shell: |
-    PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}" psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT current_setting('max_connections');" 2>&1 | grep -vE "password|Password|FATAL|WARNING|ERROR" | xargs || echo "N/A"
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
+    timeout {{ postgresql_task_timeout | default(10) }} PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}" psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT current_setting('max_connections');" 2>&1 | grep -vE "password|Password|FATAL|WARNING|ERROR" | xargs || echo "N/A"
   register: max_connections
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   failed_when: false
 
@@ -351,12 +395,14 @@
   shell: |
     export PGHOST=localhost
     export PGPORT=5432
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
-    psql -h localhost -U postgres -t -c "
+    timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "
     SELECT spcname,
            pg_size_pretty(pg_tablespace_size(spcname))
     FROM pg_tablespace;" 2>&1 | grep -v "password\|Password" || echo "N/A"
   register: tablespace
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   failed_when: false
 
@@ -366,8 +412,10 @@
 # 8-1. 아카이브 모드 확인 (온라인 백업 가능 여부)
 - name: Check archive_mode
   shell: |
-    PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}" psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW archive_mode;" 2>&1 | grep -v "password\|Password\|FATAL\|WARNING" | xargs || echo "N/A"
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
+    timeout {{ postgresql_task_timeout | default(10) }} PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}" psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW archive_mode;" 2>&1 | grep -v "password\|Password\|FATAL\|WARNING" | xargs || echo "N/A"
   register: archive_mode
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   changed_when: false
   failed_when: false
 
@@ -376,16 +424,17 @@
   shell: |
     export PGHOST=localhost
     export PGPORT=5432
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
-    ARCHIVE_MODE=$(psql -h localhost -U postgres -t -c "SHOW archive_mode;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
+    ARCHIVE_MODE=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SHOW archive_mode;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
     if [ -z "$ARCHIVE_MODE" ] || [ "$ARCHIVE_MODE" = "" ] || [ "$ARCHIVE_MODE" = "PGPASSWORD" ]; then
       # ansible_user로 재시도
-      ARCHIVE_MODE=$(psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW archive_mode;" 2>&1 | grep -v "password\|Password" | xargs || echo "off")
+      ARCHIVE_MODE=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW archive_mode;" 2>&1 | grep -v "password\|Password" | xargs || echo "off")
     fi
-    WAL_LEVEL=$(psql -h localhost -U postgres -t -c "SHOW wal_level;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
+    WAL_LEVEL=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SHOW wal_level;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
     if [ -z "$WAL_LEVEL" ] || [ "$WAL_LEVEL" = "" ] || [ "$WAL_LEVEL" = "PGPASSWORD" ]; then
       # ansible_user로 재시도
-      WAL_LEVEL=$(psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW wal_level;" 2>&1 | grep -v "password\|Password" | xargs || echo "minimal")
+      WAL_LEVEL=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW wal_level;" 2>&1 | grep -v "password\|Password" | xargs || echo "minimal")
     fi
     if [ "$ARCHIVE_MODE" = "on" ] && [ "$WAL_LEVEL" != "minimal" ]; then
       echo "ONLINE_BACKUP_POSSIBLE"
@@ -393,6 +442,7 @@
       echo "ONLINE_BACKUP_NOT_POSSIBLE (archive_mode: ${ARCHIVE_MODE}, wal_level: ${WAL_LEVEL})"
     fi
   register: online_backup_possible
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   changed_when: false
 
@@ -401,11 +451,12 @@
   shell: |
     export PGHOST=localhost
     export PGPORT=5432
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
-    DATA_DIR=$(psql -h localhost -U postgres -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
+    DATA_DIR=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
     if [ -z "$DATA_DIR" ] || [ "$DATA_DIR" = "" ] || [ "$DATA_DIR" = "PGPASSWORD" ]; then
       # ansible_user로 재시도
-      DATA_DIR=$(psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "/var/lib/postgresql")
+      DATA_DIR=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "/var/lib/postgresql")
     fi
     if [ -z "$DATA_DIR" ] || [ "$DATA_DIR" = "" ]; then
       echo "/var/lib/postgresql"
@@ -413,6 +464,7 @@
       echo "$DATA_DIR"
     fi
   register: pg_wal_data_dir
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   changed_when: false
 
@@ -441,6 +493,7 @@
       echo "WAL directory not found: $WAL_DIR"
     fi
   register: wal_size
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   changed_when: false
 
@@ -506,11 +559,12 @@
   shell: |
     export PGHOST=localhost
     export PGPORT=5432
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
-    RESULT=$(psql -h localhost -U postgres -t -c "SELECT datname FROM pg_database WHERE datistemplate = false;" 2>&1 | grep -v "password\|Password" | xargs -n1 | grep -v postgres || echo "")
+    RESULT=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SELECT datname FROM pg_database WHERE datistemplate = false;" 2>&1 | grep -v "password\|Password" | xargs -n1 | grep -v postgres || echo "")
     if [ -z "$RESULT" ] || [ "$RESULT" = "" ] || [ "$RESULT" = "PGPASSWORD" ]; then
       # ansible_user로 재시도
-      RESULT=$(psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT datname FROM pg_database WHERE datistemplate = false;" 2>&1 | grep -v "password\|Password" | xargs -n1 | grep -v postgres || echo "")
+      RESULT=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT datname FROM pg_database WHERE datistemplate = false;" 2>&1 | grep -v "password\|Password" | xargs -n1 | grep -v postgres || echo "")
     fi
     if [ -z "$RESULT" ] || [ "$RESULT" = "" ]; then
       echo ""
@@ -518,6 +572,7 @@
       echo "$RESULT"
     fi
   register: db_list
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   changed_when: false
 
@@ -526,11 +581,12 @@
   shell: |
     export PGHOST=localhost
     export PGPORT=5432
+    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
-    RESULT=$(psql -h localhost -U postgres -t -c "SELECT count(*) FROM pg_database WHERE datistemplate = false;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
+    RESULT=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SELECT count(*) FROM pg_database WHERE datistemplate = false;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
     if [ -z "$RESULT" ] || [ "$RESULT" = "" ] || [ "$RESULT" = "PGPASSWORD" ]; then
       # ansible_user로 재시도
-      RESULT=$(psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT count(*) FROM pg_database WHERE datistemplate = false;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
+      RESULT=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SELECT count(*) FROM pg_database WHERE datistemplate = false;" 2>&1 | grep -v "password\|Password" | xargs || echo "0")
     fi
     if [ -z "$RESULT" ] || [ "$RESULT" = "" ]; then
       echo "0"
@@ -538,6 +594,7 @@
       echo "$RESULT"
     fi
   register: db_count
+  timeout: "{{ postgresql_task_timeout | default(10) }}"
   ignore_errors: yes
   changed_when: false
 

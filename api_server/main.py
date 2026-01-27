@@ -143,6 +143,9 @@ async def create_check_result(check_result: CheckResultRequest):
             "check_time": check_result.check_time
         }
     except Exception as e:
+        import traceback
+        error_detail = f"점검 결과 저장 중 오류 발생: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR: {error_detail}")  # 서버 로그에 출력
         raise HTTPException(
             status_code=500,
             detail=f"점검 결과 저장 중 오류 발생: {str(e)}"
@@ -260,6 +263,7 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "호스트명": result.get("hostname", "N/A"),
         "점검시간": format_check_time(result.get("check_time", "N/A")),
         "check_time": result.get("check_time", "N/A"),  # 원본 날짜 (차트용)
+        "created_at": result.get("created_at", "N/A"),  # 데이터베이스 저장 시간 (날짜 필터용)
         "담당자": result.get("checker", "N/A"),
         "상태": result.get("status", "N/A"),
     }
@@ -1658,6 +1662,39 @@ async def was_checks_report():
 async def unified_report():
     """
     통합 점검 결과 리포트 - DB, OS, WAS를 탭으로 통합
+    
+    Returns:
+        HTML 형식의 통합 리포트
+    """
+    try:
+        import os
+        template_path = os.path.join(os.path.dirname(__file__), "unified_report_template.html")
+        with open(template_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        
+        return HTMLResponse(content=html)
+        
+    except Exception as e:
+        error_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>오류</title>
+        </head>
+        <body>
+            <h1>오류 발생</h1>
+            <p>{str(e)}</p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=error_html, status_code=500)
+
+
+@app.get("/api/dashboard", response_class=HTMLResponse)
+async def dashboard():
+    """
+    대시보드 - 통합 점검 결과 리포트 (DB, OS, WAS를 탭으로 통합)
     
     Returns:
         HTML 형식의 통합 리포트

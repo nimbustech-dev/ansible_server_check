@@ -31,11 +31,26 @@
   ignore_errors: yes
 
 ################################
-# 3. API 서버로 전송
+# 3. API 서버 URL 리스트 준비
 ################################
-- name: Send check result to API server
+- name: Prepare API server URLs list
+  set_fact:
+    api_urls_to_send: >-
+      {{
+        api_server_urls | default(
+          api_server.urls | default(
+            [api_server_url | default(api_server.url | default('http://192.168.0.18:8000/api/checks'))]
+          )
+        )
+      }}
+  run_once: true
+
+################################
+# 4. 여러 API 서버로 전송
+################################
+- name: Send check result to multiple API servers
   uri:
-    url: "{{ api_server_url | default(api_server.url | default('http://192.168.0.18:8000/api/checks')) }}"
+    url: "{{ item }}"
     method: POST
     body: "{{ api_payload }}"
     body_format: json
@@ -43,28 +58,30 @@
     timeout: "{{ api_server.timeout | default(60) }}"
     headers:
       Content-Type: "application/json"
-  register: api_response
+  register: api_responses
   delegate_to: localhost
   become: no
-  run_once: true
+  loop: "{{ api_urls_to_send }}"
   failed_when: false  # API 실패해도 점검 자체는 성공으로 처리
   ignore_errors: yes  # 오류 무시하고 계속 진행
   retries: "{{ api_server.retry_count | default(5) }}"
   delay: 3
 
 ################################
-# 4. 전송 결과 로깅
+# 5. 전송 결과 로깅
 ################################
-- name: Log API response
+- name: Log API response for each server
   debug:
     msg: |
-      API 전송 결과:
-      - 상태 코드: {{ api_response.status | default('N/A') }}
-      - 응답: {{ api_response.json | default(api_response.msg) | default('N/A') }}
-  when: api_response is defined
+      API 전송 결과 ({{ item.item }}):
+      - 상태 코드: {{ item.status | default('N/A') }}
+      - 응답: {{ item.json | default(item.msg) | default('N/A') }}
+  loop: "{{ api_responses.results | default([]) }}"
+  when: item is defined
 
-- name: Warn if API send failed
+- name: Warn if any API send failed
   debug:
-    msg: "⚠️ API 서버로 전송 실패. 로컬 파일은 저장되었습니다: /tmp/{{ check_type }}_check_result_*.json"
-  when: api_response.status | default(0) not in [200, 201]
+    msg: "⚠️ API 서버({{ item.item }})로 전송 실패. 로컬 파일은 저장되었습니다: /tmp/{{ check_type }}_check_result_*.json"
+  loop: "{{ api_responses.results | default([]) }}"
+  when: item.status | default(0) not in [200, 201]
 
