@@ -4,7 +4,7 @@ FastAPI 기반으로 점검 결과를 받아서 DB에 저장
 """
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone, timedelta
@@ -75,19 +75,8 @@ class CheckResultRequest(BaseModel):
 
 @app.get("/")
 async def root():
-    """루트 엔드포인트"""
-    return {
-        "message": "Ansible 점검 결과 수집 API 서버",
-        "version": "1.0.0",
-        "endpoints": {
-            "POST /api/checks": "점검 결과 저장",
-            "GET /api/checks": "점검 결과 조회",
-            "GET /api/health": "서버 상태 확인",
-            "GET /api/db-checks/report": "DB 점검 결과 리포트 (HTML)",
-            "GET /api/os-checks/report": "OS 점검 결과 리포트 (HTML)",
-            "GET /api/was-checks/report": "WAS 점검 결과 리포트 (HTML)"
-        }
-    }
+    """루트 엔드포인트 - 대시보드로 리다이렉트"""
+    return RedirectResponse(url="/api/dashboard")
 
 
 @app.get("/api/health")
@@ -1669,6 +1658,39 @@ async def unified_report():
     try:
         import os
         template_path = os.path.join(os.path.dirname(__file__), "unified_report_template.html")
+        with open(template_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        
+        return HTMLResponse(content=html)
+        
+    except Exception as e:
+        error_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>오류</title>
+        </head>
+        <body>
+            <h1>오류 발생</h1>
+            <p>{str(e)}</p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=error_html, status_code=500)
+
+
+@app.get("/api/json-viewer", response_class=HTMLResponse)
+async def json_viewer():
+    """
+    점검 결과 JSON 뷰어 페이지 - PRETTY PRINT 적용
+    
+    Returns:
+        HTML 형식의 JSON 뷰어
+    """
+    try:
+        import os
+        template_path = os.path.join(os.path.dirname(__file__), "json_viewer.html")
         with open(template_path, "r", encoding="utf-8") as f:
             html = f.read()
         

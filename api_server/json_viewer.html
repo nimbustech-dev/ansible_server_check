@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>점검 결과 JSON 뷰어</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .controls {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .control-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        label {
+            font-weight: 600;
+            color: #495057;
+            font-size: 14px;
+        }
+        
+        select, input, button {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        select, input {
+            background: white;
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        button:hover {
+            background: #5568d3;
+        }
+        
+        button:active {
+            transform: scale(0.98);
+        }
+        
+        .info {
+            padding: 15px 30px;
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            margin: 0 30px;
+            margin-top: 20px;
+            border-radius: 4px;
+        }
+        
+        .info strong {
+            color: #1976D2;
+        }
+        
+        .json-container {
+            padding: 30px;
+            overflow-x: auto;
+        }
+        
+        pre {
+            background: #282c34;
+            color: #abb2bf;
+            padding: 20px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        
+        .error {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            color: #856404;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 30px;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 20px;
+            padding: 15px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 4px;
+        }
+        
+        .stat-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #495057;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 점검 결과 JSON 뷰어</h1>
+            <p>데이터베이스에 저장된 점검 결과를 JSON 형태로 확인합니다</p>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="checkType">점검 유형:</label>
+                <select id="checkType">
+                    <option value="all">전체</option>
+                    <option value="mariadb">MariaDB</option>
+                    <option value="postgresql">PostgreSQL</option>
+                    <option value="cubrid">CUBRID</option>
+                    <option value="os">OS</option>
+                    <option value="was">WAS/Tomcat</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="limit">최대 개수:</label>
+                <input type="number" id="limit" value="10" min="1" max="1000" style="width: 80px;">
+            </div>
+            
+            <div class="control-group">
+                <label for="format">데이터 형식:</label>
+                <select id="format">
+                    <option value="formatted">포맷된 데이터 (테이블용)</option>
+                    <option value="raw">원본 데이터 (전체 JSON)</option>
+                </select>
+            </div>
+            
+            <button onclick="loadData()">🔄 데이터 불러오기</button>
+            <button onclick="copyToClipboard()">📋 복사</button>
+        </div>
+        
+        <div id="stats" class="stats" style="display: none;">
+            <div class="stat-item">
+                <span class="stat-label">총 개수</span>
+                <span class="stat-value" id="totalCount">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">표시 개수</span>
+                <span class="stat-value" id="displayCount">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">마지막 업데이트</span>
+                <span class="stat-value" id="lastUpdate" style="font-size: 14px;">-</span>
+            </div>
+        </div>
+        
+        <div id="error" class="error" style="display: none;"></div>
+        
+        <div class="json-container">
+            <div id="loading" class="loading">데이터를 불러오는 중...</div>
+            <pre id="jsonOutput" style="display: none;"></pre>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = window.location.origin;
+        
+        function getApiUrl(checkType, format) {
+            if (format === 'raw') {
+                if (checkType === 'all') {
+                    return `${API_BASE}/api/checks?limit=${document.getElementById('limit').value}`;
+                } else {
+                    return `${API_BASE}/api/checks?check_type=${checkType}&limit=${document.getElementById('limit').value}`;
+                }
+            } else {
+                // 포맷된 데이터
+                if (checkType === 'mariadb' || checkType === 'postgresql' || checkType === 'cubrid') {
+                    return `${API_BASE}/api/db-checks/data?limit=${document.getElementById('limit').value}`;
+                } else if (checkType === 'os') {
+                    return `${API_BASE}/api/os-checks/data?limit=${document.getElementById('limit').value}`;
+                } else if (checkType === 'was') {
+                    return `${API_BASE}/api/was-checks/data?limit=${document.getElementById('limit').value}`;
+                } else {
+                    // 전체인 경우 모든 데이터 가져오기
+                    return `${API_BASE}/api/checks?limit=${document.getElementById('limit').value}`;
+                }
+            }
+        }
+        
+        async function loadData() {
+            const checkType = document.getElementById('checkType').value;
+            const format = document.getElementById('format').value;
+            const limit = document.getElementById('limit').value;
+            
+            const loading = document.getElementById('loading');
+            const jsonOutput = document.getElementById('jsonOutput');
+            const error = document.getElementById('error');
+            const stats = document.getElementById('stats');
+            
+            loading.style.display = 'block';
+            jsonOutput.style.display = 'none';
+            error.style.display = 'none';
+            stats.style.display = 'none';
+            
+            try {
+                const url = getApiUrl(checkType, format);
+                console.log('Loading from:', url);
+                
+                const response = await fetch(url + '&t=' + Date.now(), {
+                    cache: 'no-cache',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                // JSON을 예쁘게 포맷
+                const formattedJson = JSON.stringify(data, null, 2);
+                
+                // 구문 강조 (간단한 버전)
+                const highlighted = highlightJson(formattedJson);
+                
+                jsonOutput.innerHTML = highlighted;
+                jsonOutput.style.display = 'block';
+                loading.style.display = 'none';
+                
+                // 통계 업데이트
+                if (data.count !== undefined) {
+                    document.getElementById('totalCount').textContent = data.count;
+                    document.getElementById('displayCount').textContent = data.results ? data.results.length : 0;
+                } else if (data.results) {
+                    document.getElementById('totalCount').textContent = data.results.length;
+                    document.getElementById('displayCount').textContent = data.results.length;
+                }
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('ko-KR');
+                stats.style.display = 'flex';
+                
+            } catch (err) {
+                loading.style.display = 'none';
+                error.textContent = `오류 발생: ${err.message}`;
+                error.style.display = 'block';
+                console.error('Error loading data:', err);
+            }
+        }
+        
+        function highlightJson(json) {
+            return json
+                .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function(match) {
+                    let cls = 'number';
+                    if (/^"/.test(match)) {
+                        if (/:$/.test(match)) {
+                            cls = 'key';
+                        } else {
+                            cls = 'string';
+                        }
+                    } else if (/true|false/.test(match)) {
+                        cls = 'boolean';
+                    } else if (/null/.test(match)) {
+                        cls = 'null';
+                    }
+                    return '<span class="' + cls + '">' + escapeHtml(match) + '</span>';
+                });
+        }
+        
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+        
+        function copyToClipboard() {
+            const jsonOutput = document.getElementById('jsonOutput');
+            const text = jsonOutput.textContent;
+            
+            navigator.clipboard.writeText(text).then(() => {
+                alert('JSON 데이터가 클립보드에 복사되었습니다!');
+            }).catch(err => {
+                console.error('복사 실패:', err);
+                alert('복사에 실패했습니다. 수동으로 선택하여 복사하세요.');
+            });
+        }
+        
+        // 페이지 로드 시 자동으로 데이터 불러오기
+        window.addEventListener('load', () => {
+            loadData();
+        });
+        
+        // Enter 키로도 불러오기
+        document.getElementById('limit').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                loadData();
+            }
+        });
+    </script>
+    
+    <style>
+        pre .string { color: #98c379; }
+        pre .number { color: #d19a66; }
+        pre .boolean { color: #56b6c2; }
+        pre .null { color: #c678dd; }
+        pre .key { color: #e06c75; }
+    </style>
+</body>
+</html>

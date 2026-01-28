@@ -77,11 +77,18 @@ ansible-playbook -i inventory cubrid_check/cubrid_check.yml
 
 아래는 **API 서버 기준 경로**입니다(실행 중인 API 서버 호스트/포트에 접속):
 
+- **루트 경로**: `/` → 대시보드로 자동 리다이렉트
+- **대시보드**: `/api/dashboard` (메인 대시보드 - DB/OS/WAS 통합)
 - **통합 리포트**: `/api/report`
 - **DB 리포트**: `/api/db-checks/report`
 - **OS 리포트**: `/api/os-checks/report`
 - **WAS 리포트**: `/api/was-checks/report`
+- **JSON 뷰어**: `/api/json-viewer`
 - **Swagger(API 문서)**: `/docs`
+
+**배포된 서버 접속 예시:**
+- 대시보드: `http://115.85.181.103:8000/api/dashboard`
+- 루트 접속: `http://115.85.181.103:8000/` (자동으로 대시보드로 이동)
 
 ---
 
@@ -215,6 +222,8 @@ ansible-playbook -i hosts.ini tomcat_check/tomcat_check.yml
 ---
 
 ## 트러블슈팅(자주 막히는 포인트)
+
+자세한 트러블슈팅 가이드는 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)를 참고하세요.
 
 - **결과가 안 올라감**: `config/api_config.yml`의 `api_server.url`이 올바른지(특히 `/api/checks`) 확인
 - **API 서버가 안 뜸**: `api_server.log` 확인
