@@ -118,7 +118,8 @@ run_check() {
 # 서버에서 실행 시 hosts.ini.server 사용, 로컬에서는 hosts.ini 사용
 if [ -f "hosts.ini.server" ]; then
     INVENTORY_FILE="hosts.ini.server"
-    LIMIT_TARGET="nimbus-server"  # SSH로 자기 자신을 점검
+    # 모든 서버 점검 (nimbus-server와 dongguk_server1)
+    LIMIT_TARGET="nimbus-server,dongguk_server1"
 else
     INVENTORY_FILE="hosts.ini"
     LIMIT_TARGET="nimbus-server"
