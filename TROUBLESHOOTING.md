@@ -269,6 +269,78 @@ EOF
 
 ---
 
+## Cron에서 자동 점검 실패 (exit code 127)
+
+### 증상
+- Crontab에는 매일 오전 7시 실행으로 설정되어 있음
+- `navercloud_cron.log`에 07:00:01 실행 기록은 있으나, 모든 점검이 **종료 코드 127**로 실패
+- OS / MariaDB / PostgreSQL / Tomcat 모두 "점검 실패 (종료 코드: 127, 소요 시간: 0초)"
+
+### 원인
+Cron은 **제한된 환경**에서 실행됩니다. `PATH`에 `/usr/local/bin`이 없어 `ansible-playbook`을 찾지 못함 (127 = command not found).
+
+### 해결
+`auto_check_navercloud.sh` **맨 위**(set -e 다음)에 PATH 추가:
+
+```bash
+# Cron 환경에서 PATH 제한됨 → ansible-playbook 등 명령어를 찾을 수 있도록 설정
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:$PATH"
+```
+
+수정 후 서버에 스크립트 다시 배포:
+
+```bash
+rsync -avz -e "ssh -i ~/.ssh/nimso2026.pem -p 4433" ./auto_check_navercloud.sh root@27.96.129.114:/opt/ansible-monitoring/
+```
+
+### 확인
+- 다음날 오전 7시 이후 `navercloud_cron.log` 또는 `navercloud_check_YYYYMMDD.log`에서 성공 메시지 확인
+- 대시보드에서 해당 날짜/시간대 점검 결과 노출 여부 확인
+
+---
+
+## Cron에서 자동 점검 실패 (exit code 4)
+
+### 증상
+- 스크립트는 실행되나 OS / MariaDB / PostgreSQL / Tomcat 모두 **종료 코드 4**로 실패
+- 각 점검에 60~100초 정도 소요 후 실패
+
+### 원인
+Ansible **exit code 4** = "one or more hosts were unreachable".  
+`hosts.ini.server`에 **dongguk_server1**(192.168.0.23)이 포함되어 있는데, 네이버 클라우드 서버에서 해당 IP로 연결이 안 되면 전체 playbook이 실패합니다.
+
+### 해결
+`auto_check_navercloud.sh`에서 **동국대 서버 연결 가능 여부를 먼저 확인**하고, 연결 불가 시 **nimbus-server만** 점검하도록 변경:
+
+- `ansible dongguk_server1 -m ping`으로 연결 테스트 (타임아웃 10초)
+- 성공 시: `LIMIT_TARGET="nimbus-server,dongguk_server1"`
+- 실패 시: `LIMIT_TARGET="nimbus-server"` (네이버 클라우드만 점검)
+
+이렇게 하면 동국대 네트워크가 준비되기 전에도 **nimbus-server 자동 점검은 매일 오전 7시에 정상 수행**됩니다.
+
+---
+
+## PostgreSQL 점검만 실패 (exit code 2, task timeout)
+
+### 증상
+- OS / MariaDB / Tomcat은 성공, **PostgreSQL만** "점검 실패 (종료 코드: 2)"
+- 서버에서 수동 실행 시: `The shell action failed to execute in the expected time frame (10) and was terminated`
+
+### 원인
+1. **Ansible task 타임아웃**: PostgreSQL role의 일부 shell 태스크에 `timeout: 10`(초)이 걸려 있음.
+2. **"Get PostgreSQL log directory"** 등에서 `psql`을 여러 번 실행(먼저 `postgres` 사용자, 실패 시 `ansible_user` 재시도)하는데, SSH로 자기 자신(127.0.0.1)을 점검할 때 연결이 느려 10초 안에 끝나지 않음.
+3. 타임아웃으로 태스크가 중단되면 playbook이 실패하고 **exit code 2** 반환.
+
+### 해결 (적용된 수정)
+1. **`postgresql_check.yml`**: `postgresql_task_timeout`을 **10 → 60초**로 증가.
+2. **`roles/postgresql_check/tasks/main.yml`**  
+   - "Get PostgreSQL log directory" / "Check system log filesystem usage"에서 **`ansible_user`를 먼저** 사용하고, 실패 시에만 `postgres` 사용자 시도.  
+   - 각 `psql` 호출에 `timeout 8` 초를 걸어 한 호출이 무한히 걸리지 않도록 함.
+
+이후 서버에 `postgresql_check` 디렉터리를 다시 배포하고, 자동 점검 스크립트 또는 `ansible-playbook ... postgresql_check.yml`으로 재실행해 보면 됨.
+
+---
+
 ## 기타 문제
 
 ### 문제: CRLF 줄바꿈 문제

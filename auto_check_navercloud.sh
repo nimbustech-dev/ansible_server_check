@@ -5,6 +5,9 @@
 
 set -e
 
+# Cron 환경에서 PATH 제한됨 → ansible-playbook 등 명령어를 찾을 수 있도록 설정
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:$PATH"
+
 # 로케일 설정 (Ansible 경고 방지)
 export LC_ALL=en_US.UTF-8
 export LANG=en_US.UTF-8
@@ -118,8 +121,14 @@ run_check() {
 # 서버에서 실행 시 hosts.ini.server 사용, 로컬에서는 hosts.ini 사용
 if [ -f "hosts.ini.server" ]; then
     INVENTORY_FILE="hosts.ini.server"
-    # 모든 서버 점검 (nimbus-server와 dongguk_server1)
-    LIMIT_TARGET="nimbus-server,dongguk_server1"
+    # 동국대 서버(dongguk_server1) 연결 가능 시에만 포함, 아니면 nimbus-server만 점검 (타임아웃 10초)
+    if timeout 10 ansible dongguk_server1 -i hosts.ini.server -m ping -o >/dev/null 2>&1; then
+        LIMIT_TARGET="nimbus-server,dongguk_server1"
+        log "info" "동국대 서버 연결 가능 → nimbus-server + dongguk_server1 점검"
+    else
+        LIMIT_TARGET="nimbus-server"
+        log "info" "동국대 서버 연결 불가 → nimbus-server만 점검"
+    fi
 else
     INVENTORY_FILE="hosts.ini"
     LIMIT_TARGET="nimbus-server"

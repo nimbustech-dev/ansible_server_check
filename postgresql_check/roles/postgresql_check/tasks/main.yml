@@ -111,21 +111,18 @@
   changed_when: false
 
 # 1-3. DB 시스템 로그 파일시스템 (로그 디렉토리)
+# ansible_user 먼저 시도 (비밀번호 인증, SSH 자체점검 시 빠름). postgres(peer)는 느리거나 타임아웃 유발 가능.
 - name: Get PostgreSQL log directory
   shell: |
-    export PGHOST=localhost
-    export PGPORT=5432
-    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
+    export PGHOST=localhost PGPORT=5432 PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
-    LOG_DIRECTORY=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SHOW log_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
-    if [ -z "$LOG_DIRECTORY" ] || [ "$LOG_DIRECTORY" = "" ] || [ "$LOG_DIRECTORY" = "PGPASSWORD" ]; then
-      # ansible_user로 재시도
-      LOG_DIRECTORY=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW log_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "log")
+    LOG_DIRECTORY=$(timeout 8 psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW log_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
+    if [ -z "$LOG_DIRECTORY" ] || [ "$LOG_DIRECTORY" = "PGPASSWORD" ]; then
+      LOG_DIRECTORY=$(timeout 8 psql -h localhost -U postgres -t -c "SHOW log_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "log")
     fi
-    DATA_DIR=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
-    if [ -z "$DATA_DIR" ] || [ "$DATA_DIR" = "" ] || [ "$DATA_DIR" = "PGPASSWORD" ]; then
-      # ansible_user로 재시도
-      DATA_DIR=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "/var/lib/postgresql")
+    DATA_DIR=$(timeout 8 psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
+    if [ -z "$DATA_DIR" ] || [ "$DATA_DIR" = "PGPASSWORD" ]; then
+      DATA_DIR=$(timeout 8 psql -h localhost -U postgres -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "/var/lib/postgresql")
     fi
     if [ "$LOG_DIRECTORY" = "log" ] || [ -z "$LOG_DIRECTORY" ]; then
       echo "${DATA_DIR}/log"
@@ -139,19 +136,15 @@
 
 - name: Check system log filesystem usage
   shell: |
-    export PGHOST=localhost
-    export PGPORT=5432
-    export PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
+    export PGHOST=localhost PGPORT=5432 PGCONNECT_TIMEOUT={{ postgresql_connect_timeout | default(5) }}
     export PGPASSWORD="{{ postgresql_password | default('nimbus1234') }}"
     LOG_DIR="{{ pg_log_directory.stdout | default('/var/lib/pgsql/data/log') | trim }}"
     if [ -d "$LOG_DIR" ]; then
       df -h "$LOG_DIR" | tail -1
     else
-      # 기본 로그 위치 확인
-      DATA_DIR=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U postgres -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
-      if [ -z "$DATA_DIR" ] || [ "$DATA_DIR" = "" ] || [ "$DATA_DIR" = "PGPASSWORD" ]; then
-        # ansible_user로 재시도
-        DATA_DIR=$(timeout {{ postgresql_task_timeout | default(10) }} psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "/var/lib/postgresql")
+      DATA_DIR=$(timeout 8 psql -h localhost -U ansible_user -d ansible_checks -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "")
+      if [ -z "$DATA_DIR" ] || [ "$DATA_DIR" = "PGPASSWORD" ]; then
+        DATA_DIR=$(timeout 8 psql -h localhost -U postgres -t -c "SHOW data_directory;" 2>&1 | grep -v "password\|Password" | xargs || echo "/var/lib/postgresql")
       fi
       if [ -n "$DATA_DIR" ] && [ "$DATA_DIR" != "" ]; then
         df -h "$DATA_DIR" | tail -1

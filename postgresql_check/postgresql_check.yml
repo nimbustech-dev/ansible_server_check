@@ -39,7 +39,7 @@
     postgresql_password: "{{ lookup('env', 'POSTGRESQL_PASSWORD') | default('nimbus1234') }}"
     # PostgreSQL 타임아웃 설정
     postgresql_connect_timeout: 5  # psql 연결 타임아웃 (초)
-    postgresql_task_timeout: 10    # Ansible task 타임아웃 (초)
+    postgresql_task_timeout: 60    # Ansible task 타임아웃 (초) - SSH 자체점검 시 psql 다중 시도로 시간 소요
 
   roles:
     - postgresql_check
