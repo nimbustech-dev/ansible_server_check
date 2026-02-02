@@ -388,6 +388,30 @@
       flex-direction: column;
       gap: 0;
       margin-top: 8px;
+      max-height: 320px;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    /* Custom scrollbar: feed-list, modal-body, pre */
+    .feed-list, .modal-body, .modal-body pre{
+      scrollbar-width: thin;
+      scrollbar-color: rgba(148,163,184,0.35) rgba(148,163,184,0.08);
+    }
+    .feed-list::-webkit-scrollbar, .modal-body::-webkit-scrollbar, .modal-body pre::-webkit-scrollbar{
+      width: 8px;
+      height: 8px;
+    }
+    .feed-list::-webkit-scrollbar-track, .modal-body::-webkit-scrollbar-track, .modal-body pre::-webkit-scrollbar-track{
+      background: rgba(148,163,184,0.06);
+      border-radius: 4px;
+    }
+    .feed-list::-webkit-scrollbar-thumb, .modal-body::-webkit-scrollbar-thumb, .modal-body pre::-webkit-scrollbar-thumb{
+      background: rgba(148,163,184,0.28);
+      border-radius: 4px;
+    }
+    .feed-list::-webkit-scrollbar-thumb:hover, .modal-body::-webkit-scrollbar-thumb:hover, .modal-body pre::-webkit-scrollbar-thumb:hover{
+      background: rgba(148,163,184,0.45);
     }
 
     .feed-item{
@@ -681,6 +705,10 @@
     [data-theme="light"] .modal-header{ border-color: rgba(0,0,0,0.08); }
     [data-theme="light"] .modal-close{ background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.1); color: var(--text); }
     [data-theme="light"] pre{ background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #334155; }
+    [data-theme="light"] .feed-list, [data-theme="light"] .modal-body, [data-theme="light"] .modal-body pre{ scrollbar-color: rgba(0,0,0,0.25) rgba(0,0,0,0.06); }
+    [data-theme="light"] .feed-list::-webkit-scrollbar-track, [data-theme="light"] .modal-body::-webkit-scrollbar-track, [data-theme="light"] .modal-body pre::-webkit-scrollbar-track{ background: rgba(0,0,0,0.06); }
+    [data-theme="light"] .feed-list::-webkit-scrollbar-thumb, [data-theme="light"] .modal-body::-webkit-scrollbar-thumb, [data-theme="light"] .modal-body pre::-webkit-scrollbar-thumb{ background: rgba(0,0,0,0.2); }
+    [data-theme="light"] .feed-list::-webkit-scrollbar-thumb:hover, [data-theme="light"] .modal-body::-webkit-scrollbar-thumb:hover, [data-theme="light"] .modal-body pre::-webkit-scrollbar-thumb:hover{ background: rgba(0,0,0,0.35); }
     .theme-toggle{ display: inline-flex; gap: 4px; }
     .btn-theme{ padding: 8px 12px; font-size: 0.85rem; }
     [data-theme="dark"] .btn-theme#themeDark{ background: linear-gradient(135deg, rgba(59,130,246,0.9), rgba(37,99,235,0.9)); color: #fff; border-color: rgba(59,130,246,0.55); }
