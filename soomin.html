@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>서버 점검 모니터링 대시보드</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* 기본 스타일 초기화 */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+
+        body {
+            background-color: #f4f7fc;
+            color: #333;
+            padding: 20px;
+        }
+
+        /* 레이아웃 그리드 */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* 1. 상단 KPI 카드 섹션 */
+        .kpi-section {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: #555;
+        }
+
+        .badge-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .bg-blue { background-color: #3b82f6; }
+        .bg-green { background-color: #10b981; }
+        .bg-red { background-color: #ef4444; }
+
+        .card-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        /* 카드 하단 네온 효과 바 */
+        .neon-bar {
+            height: 4px;
+            border-radius: 2px;
+            margin-top: 10px;
+            box-shadow: 0 0 8px currentColor;
+        }
+        .text-blue { color: #3b82f6; background-color: #3b82f6; }
+        .text-green { color: #10b981; background-color: #10b981; }
+        .text-red { color: #ef4444; background-color: #ef4444; }
+
+        /* 2. 메인 콘텐츠 섹션 (좌: 차트/목록, 우: 추이/피드) */
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr; /* 좌측 2, 우측 1 비율 */
+            gap: 20px;
+        }
+
+        .left-panel, .right-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* 차트 섹션 (성공비율 + 유형별) */
+        .charts-row {
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 15px;
+            color: #111;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 200px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        /* 도넛 차트 가운데 텍스트 */
+        .donut-center-text {
+            position: absolute;
+            text-align: center;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: #555;
+            pointer-events: none;
+        }
+        .donut-center-text span {
+            display: block;
+            font-size: 1.2rem;
+            color: #000;
+        }
+
+        /* 문제 서버 목록 테이블 */
+        .table-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px 8px;
+            background-color: #f3f4f6;
+            color: #4b5563;
+            font-size: 0.9rem;
+        }
+        
+        /* 첫번째 th, td 둥글게 */
+        th:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; padding-left: 16px;}
+        th:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
+        
+        td {
+            padding: 16px 8px;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 0.95rem;
+            color: #1f2937;
+        }
+        td:first-child { padding-left: 16px; }
+
+        /* 상태 뱃지 */
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: white;
+            display: inline-block;
+            text-align: center;
+            min-width: 50px;
+        }
+        .badge-error { background-color: #ef4444; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.4); }
+        .badge-warning { background-color: #f59e0b; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.4); }
+        .badge-normal { background-color: #10b981; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.4); }
+
+        /* 우측 패널 스타일 */
+        .trend-card, .feed-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        .feed-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+
+        .feed-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .feed-item:last-child { border-bottom: none; }
+
+        .feed-server { font-weight: 500; }
+        .feed-type { color: #6b7280; font-size: 0.9rem; }
+
+        /* 반응형 처리 */
+        @media (max-width: 1024px) {
+            .kpi-section { grid-template-columns: 1fr 1fr; }
+            .main-content { grid-template-columns: 1fr; }
+            .charts-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2 style="font-size: 1.5rem; margin-bottom: 10px;">KPI</h2>
+        
+        <div class="kpi-section">
+            <div class="card">
+                <div class="card-header">
+                    <div class="badge-icon bg-blue">B</div>
+                    전체 점검 건수
+                </div>
+                <div class="card-value">12,450</div>
+                <div class="neon-bar text-blue"></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="badge-icon bg-blue">B</div>
+                    오늘 점검 건수
+                </div>
+                <div class="card-value">350</div>
+                <div class="neon-bar text-blue"></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="badge-icon bg-green">G</div>
+                    정상 서버
+                </div>
+                <div class="card-value">1,120</div>
+                <div class="neon-bar text-green"></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="badge-icon bg-red">R</div>
+                    경고/에러 서버
+                </div>
+                <div class="card-value">35</div>
+                <div class="neon-bar text-red"></div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="left-panel">
+                <h3 class="section-title" style="margin-bottom:0">성공 및 유형별 분포</h3>
+                
+                <div class="charts-row">
+                    <div style="position: relative;">
+                        <h4 style="font-size:0.9rem; margin-bottom:10px;">전체 성공 비율</h4>
+                        <div class="chart-container">
+                            <canvas id="donutChart"></canvas>
+                            <div class="donut-center-text">
+                                총<br><span>1,155대</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="font-size:0.9rem; margin-bottom:10px;">유형별 점검 건수</h4>
+                        <div class="chart-container" style="height: 180px;">
+                            <canvas id="barChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <h3 class="section-title">문제 서버 목록 (Priority)</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>서버명</th>
+                                <th>점검 유형(OS/DB)</th>
+                                <th>상태</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>App-Server-05</td>
+                                <td>OS</td>
+                                <td><span class="status-badge badge-error">에러</span></td>
+                            </tr>
+                            <tr>
+                                <td>DB-Server-03</td>
+                                <td>DB</td>
+                                <td><span class="status-badge badge-warning">경고</span></td>
+                            </tr>
+                            <tr>
+                                <td>DB-Replica-02</td>
+                                <td>OS</td>
+                                <td><span class="status-badge badge-error">에러</span></td>
+                            </tr>
+                            <tr>
+                                <td>DB-Seplce-02</td>
+                                <td>DB</td>
+                                <td><span class="status-badge badge-warning">경고</span></td>
+                            </tr>
+                            <tr>
+                                <td>App-Server-06</td>
+                                <td>OS</td>
+                                <td><span class="status-badge badge-error">에러</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="right-panel">
+                <h3 class="section-title" style="margin-bottom:0">추이 및 리스트</h3>
+                
+                <div class="trend-card">
+                    <h4 style="font-size:0.9rem; margin-bottom:15px;">최근 7일간 점검 건수 추이</h4>
+                    <div class="chart-container" style="height: 150px;">
+                        <canvas id="lineChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="feed-card">
+                    <h4 style="font-size:0.9rem; margin-bottom:15px;">최근 점검 피드</h4>
+                    <div class="feed-list">
+                        <div class="feed-item">
+                            <span class="feed-server">DB-Server-01</span>
+                            <span class="feed-type">DB</span>
+                            <span class="status-badge badge-normal">정상</span>
+                        </div>
+                        <div class="feed-item">
+                            <span class="feed-server">DB-Server-01</span>
+                            <span class="feed-type">WAS</span>
+                            <span class="status-badge badge-warning">경고</span>
+                        </div>
+                        <div class="feed-item">
+                            <span class="feed-server">WAS-Server-03</span>
+                            <span class="feed-type">WAS</span>
+                            <span class="status-badge badge-normal">정상</span>
+                        </div>
+                        <div class="feed-item">
+                            <span class="feed-server">2024-10-27 14:25</span>
+                            <span class="feed-type">DB</span>
+                            <span class="status-badge badge-warning">경고</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 1. 도넛 차트 (성공 비율)
+        const ctxDonut = document.getElementById('donutChart').getContext('2d');
+        new Chart(ctxDonut, {
+            type: 'doughnut',
+            data: {
+                labels: ['성공', '실패'],
+                datasets: [{
+                    data: [85, 15],
+                    backgroundColor: ['#10b981', '#ef4444'],
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                cutout: '70%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: true }
+                },
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+
+        // 2. 가로 막대 차트 (유형별)
+        const ctxBar = document.getElementById('barChart').getContext('2d');
+        new Chart(ctxBar, {
+            type: 'bar',
+            data: {
+                labels: ['OS', 'WAS', 'DB'],
+                datasets: [
+                    {
+                        label: '성공/정상',
+                        data: [28, 39, 0], // 이미지에 기반한 대략적 수치
+                        backgroundColor: '#10b981',
+                        borderRadius: 4,
+                        barThickness: 15
+                    },
+                    {
+                        label: '실패/에러',
+                        data: [20, 0, 20], 
+                        backgroundColor: '#ef4444',
+                        borderRadius: 4,
+                        barThickness: 15
+                    }
+                ]
+            },
+            options: {
+                indexAxis: 'y', // 가로 막대
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: { 
+                        stacked: false, 
+                        grid: { display: false } 
+                    },
+                    y: { 
+                        stacked: false,
+                        grid: { display: false } 
+                    }
+                },
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+
+        // 3. 라인 차트 (추이)
+        const ctxLine = document.getElementById('lineChart').getContext('2d');
+        
+        // 그라데이션 효과 생성
+        const gradient = ctxLine.createLinearGradient(0, 0, 0, 150);
+        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
+        gradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
+
+        new Chart(ctxLine, {
+            type: 'line',
+            data: {
+                labels: ['7.20', '7.21', '10.29', '10.30', '20.26', '20.27', '20.20'],
+                datasets: [{
+                    label: '점검 건수',
+                    data: [12, 15, 11, 16, 18, 11, 23],
+                    borderColor: '#3b82f6',
+                    backgroundColor: gradient,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4, // 부드러운 곡선
+                    pointRadius: 0 // 포인트 숨김
+                }]
+            },
+            options: {
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: { display: true, grid: { display: false }, ticks: { fontSize: 10 } },
+                    y: { display: true, border: { display: false }, grid: { color: '#f0f0f0' }, min: 0, max: 30 }
+                },
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+    </script>
+</body>
+</html>

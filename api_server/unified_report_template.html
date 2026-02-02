@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>통합 점검 결과 모니터링 대시보드</title>
+    <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('reportTheme') || 'dark');</script>
     <style>
         * {
             margin: 0;
@@ -12,26 +13,28 @@
         }
 
         :root {
-            --bg: #f5f7fb;
-            --panel: #ffffff;
-            --border: #e5e7eb;
-            --text: #0f172a;
-            --muted: #64748b;
-            --primary: #1e3a8a;
-            --primary-2: #3b82f6;
-            --success: #16a34a;
-            --shadow: 0 14px 40px rgba(15, 23, 42, 0.10);
-            --shadow-sm: 0 6px 18px rgba(15, 23, 42, 0.08);
+            /* Always-dark theme (aligned with dashboard) */
+            --bg: #0b1020;
+            --panel: rgba(17, 24, 39, 0.78);
+            --border: rgba(148, 163, 184, 0.16);
+            --text: #e5e7eb;
+            --muted: #9aa6b2;
+            --primary: rgba(59, 130, 246, 0.95);
+            --primary-2: rgba(37, 99, 235, 0.95);
+            --success: #10b981;
+            --shadow: 0 18px 50px rgba(0,0,0,0.55);
+            --shadow-sm: 0 10px 26px rgba(0,0,0,0.45);
             --radius: 14px;
-            --table-head: #0b1220;
+            --table-head: rgba(2, 6, 23, 0.88);
         }
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
             background:
-                radial-gradient(1100px circle at 12% 0%, rgba(30, 58, 138, 0.10), transparent 55%),
-                radial-gradient(900px circle at 88% 20%, rgba(59, 130, 246, 0.10), transparent 55%),
-                var(--bg);
+                radial-gradient(1000px circle at 10% 0%, rgba(59,130,246,0.18), transparent 55%),
+                radial-gradient(900px circle at 90% 20%, rgba(16,185,129,0.10), transparent 55%),
+                radial-gradient(700px circle at 50% 110%, rgba(239,68,68,0.10), transparent 60%),
+                linear-gradient(180deg, var(--bg), #070b15);
             min-height: 100vh;
             padding: 20px;
             color: var(--text);
@@ -105,8 +108,8 @@
         
         .tabs-header {
             display: flex;
-            background: #f7fafc;
-            border-bottom: 2px solid #e2e8f0;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.14);
         }
         
         .tab-button {
@@ -127,8 +130,8 @@
         }
         
         .tab-button.active {
-            color: #1e3a8a;
-            background: white;
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.03);
         }
         
         .tab-button.active::after {
@@ -138,12 +141,12 @@
             left: 0;
             right: 0;
             height: 3px;
-            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            background: linear-gradient(135deg, rgba(59,130,246,0.95) 0%, rgba(37,99,235,0.95) 100%);
         }
         
         .tab-button:hover {
-            background: rgba(30, 58, 138, 0.1);
-            color: #1e3a8a;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text);
         }
         
         .tab-content {
@@ -160,7 +163,7 @@
             height: calc(100vh - 250px);
             min-height: 600px;
             border: none;
-            background: white;
+            background: transparent;
             display: block;
         }
         
@@ -199,11 +202,10 @@
         }
 
         /* ==========================
-           Chic theme overrides
-           - 기존 기능/레이아웃 유지
+           [data-theme="dark"] – 다크 모드 (기본)
            ========================== */
-        .header,
-        .tabs-container {
+        [data-theme="dark"] .header,
+        [data-theme="dark"] .tabs-container {
             background: var(--panel) !important;
             border: 1px solid var(--border) !important;
             box-shadow: var(--shadow) !important;
@@ -211,47 +213,61 @@
             backdrop-filter: none !important;
         }
 
-        .header h1 {
+        [data-theme="dark"] .header h1 {
             color: var(--text) !important;
             letter-spacing: -0.02em;
         }
 
-        .header-info {
+        [data-theme="dark"] .header-info {
             color: var(--muted) !important;
         }
 
-        .status-indicator {
+        [data-theme="dark"] .status-indicator {
             background: var(--success) !important;
             animation: none !important;
             box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.14);
         }
 
-        .tabs-header {
-            background: #f1f5f9 !important;
+        [data-theme="dark"] .tabs-header {
+            background: rgba(15, 23, 42, 0.9) !important;
             border-bottom: 1px solid var(--border) !important;
         }
 
-        .tab-button {
+        [data-theme="dark"] .tab-button {
             color: var(--muted) !important;
         }
 
-        .tab-button.active {
+        [data-theme="dark"] .tab-button.active {
             color: var(--text) !important;
         }
 
-        .tab-button.active::after {
+        [data-theme="dark"] .tab-button.active::after {
             background: var(--primary) !important;
         }
 
-        .tab-button:hover {
+        [data-theme="dark"] .tab-button:hover {
             background: rgba(30, 58, 138, 0.06) !important;
             color: var(--primary) !important;
         }
 
-        .tab-content iframe {
+        [data-theme="dark"] .tab-content iframe {
             border-radius: calc(var(--radius) - 4px);
             box-shadow: var(--shadow-sm);
         }
+
+        /* [data-theme="light"] – 라이트 모드 */
+        [data-theme="light"] body {
+            background: linear-gradient(180deg, #f1f5f9, #e2e8f0);
+            color: #1e293b;
+        }
+
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+        .theme-toggle { display: flex; gap: 4px; }
+        .btn-theme { padding: 8px 14px; font-size: 13px; border-radius: 8px; border: 1px solid rgba(148,163,184,0.2); cursor: pointer; font-weight: 600; background: transparent; color: inherit; }
+        [data-theme="dark"] .btn-theme#themeDark { background: var(--primary) !important; color: #fff !important; border-color: var(--primary); }
+        [data-theme="dark"] .btn-theme#themeLight { background: rgba(255,255,255,0.04); color: var(--muted); }
+        [data-theme="light"] .btn-theme#themeDark { background: #e2e8f0; color: #64748b; }
+        [data-theme="light"] .btn-theme#themeLight { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
     </style>
 </head>
 <body>
@@ -265,6 +281,10 @@
                     <span id="updateTime">업데이트: -</span>
                 </div>
             </div>
+            <span class="theme-toggle" role="group" aria-label="테마 선택">
+                <button type="button" class="btn-theme" id="themeDark" title="다크 모드">다크</button>
+                <button type="button" class="btn-theme" id="themeLight" title="라이트 모드">라이트</button>
+            </span>
         </div>
         
         <div class="tabs-container">
@@ -275,15 +295,15 @@
             </div>
             
             <div class="tab-content active" id="tab-db">
-                <iframe id="db-frame" src="/api/db-checks/report" frameborder="0" style="width: 100%; height: calc(100vh - 250px); min-height: 600px; border: none; background: white;"></iframe>
+                <iframe id="db-frame" src="/api/db-checks/report" frameborder="0" style="width: 100%; height: calc(100vh - 250px); min-height: 600px; border: none; background: transparent;"></iframe>
             </div>
             
             <div class="tab-content" id="tab-os">
-                <iframe id="os-frame" src="/api/os-checks/report?t=" frameborder="0" style="width: 100%; height: calc(100vh - 250px); min-height: 600px; border: none; background: white;"></iframe>
+                <iframe id="os-frame" src="/api/os-checks/report?t=" frameborder="0" style="width: 100%; height: calc(100vh - 250px); min-height: 600px; border: none; background: transparent;"></iframe>
             </div>
             
             <div class="tab-content" id="tab-was">
-                <iframe id="was-frame" src="/api/was-checks/report" frameborder="0" style="width: 100%; height: calc(100vh - 250px); min-height: 600px; border: none; background: white;"></iframe>
+                <iframe id="was-frame" src="/api/was-checks/report" frameborder="0" style="width: 100%; height: calc(100vh - 250px); min-height: 600px; border: none; background: transparent;"></iframe>
             </div>
         </div>
     </div>
@@ -347,10 +367,27 @@
             document.getElementById('updateTime').textContent = `업데이트: ${timeStr}`;
         }
         
+        const THEME_KEY = 'reportTheme';
+        function getTheme() { return localStorage.getItem(THEME_KEY) || 'dark'; }
+        function setTheme(theme) {
+            theme = theme === 'light' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem(THEME_KEY, theme);
+            var d = document.getElementById('themeDark');
+            var l = document.getElementById('themeLight');
+            if (d) d.classList.toggle('active', theme === 'dark');
+            if (l) l.classList.toggle('active', theme === 'light');
+        }
+        function initTheme() {
+            setTheme(getTheme());
+            document.getElementById('themeDark').addEventListener('click', function() { setTheme('dark'); });
+            document.getElementById('themeLight').addEventListener('click', function() { setTheme('light'); });
+        }
+
         // 초기화
         document.addEventListener('DOMContentLoaded', function() {
+            initTheme();
             updateTime();
-            // 주기적으로 업데이트 시간 갱신 (1분마다)
             setInterval(updateTime, 60000);
         });
         

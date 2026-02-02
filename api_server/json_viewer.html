@@ -4,31 +4,53 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>점검 결과 JSON 뷰어</title>
+    <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('reportTheme') || 'dark');</script>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
+
+        :root{
+            --bg: #0b1020;
+            --bg2: #070b15;
+            --panel: rgba(17, 24, 39, 0.78);
+            --border: rgba(148, 163, 184, 0.16);
+            --text: #e5e7eb;
+            --muted: #9aa6b2;
+            --blue: rgba(59, 130, 246, 0.95);
+            --blue2: rgba(37, 99, 235, 0.95);
+            --shadow: 0 18px 50px rgba(0,0,0,0.55);
+            --shadow-sm: 0 10px 26px rgba(0,0,0,0.45);
+            --radius: 14px;
+        }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f5f5f5;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background:
+                radial-gradient(1000px circle at 10% 0%, rgba(59,130,246,0.18), transparent 55%),
+                radial-gradient(900px circle at 90% 20%, rgba(16,185,129,0.10), transparent 55%),
+                radial-gradient(700px circle at 50% 110%, rgba(239,68,68,0.10), transparent 60%),
+                linear-gradient(180deg, var(--bg), var(--bg2));
             padding: 20px;
+            color: var(--text);
+            min-height: 100vh;
         }
         
         .container {
             max-width: 1400px;
             margin: 0 auto;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            background: var(--panel);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-sm);
             overflow: hidden;
         }
         
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: linear-gradient(135deg, var(--blue) 0%, var(--blue2) 100%);
+            color: #061023;
             padding: 20px 30px;
         }
         
@@ -44,8 +66,8 @@
         
         .controls {
             padding: 20px 30px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #dee2e6;
+            background: rgba(255,255,255,0.03);
+            border-bottom: 1px solid rgba(148,163,184,0.14);
             display: flex;
             gap: 15px;
             flex-wrap: wrap;
@@ -60,24 +82,31 @@
         
         label {
             font-weight: 600;
-            color: #495057;
+            color: var(--muted);
             font-size: 14px;
         }
         
         select, input, button {
             padding: 8px 12px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
+            border: 1px solid rgba(148,163,184,0.18);
+            border-radius: 12px;
             font-size: 14px;
         }
         
         select, input {
-            background: white;
+            background: rgba(255,255,255,0.04);
+            color: var(--text);
+            outline: none;
+        }
+
+        select:focus, input:focus {
+            border-color: rgba(59,130,246,0.65);
+            background: rgba(255,255,255,0.06);
         }
         
         button {
-            background: #667eea;
-            color: white;
+            background: linear-gradient(135deg, var(--blue) 0%, var(--blue2) 100%);
+            color: #061023;
             border: none;
             cursor: pointer;
             font-weight: 600;
@@ -85,7 +114,7 @@
         }
         
         button:hover {
-            background: #5568d3;
+            filter: brightness(1.05);
         }
         
         button:active {
@@ -94,15 +123,16 @@
         
         .info {
             padding: 15px 30px;
-            background: #e7f3ff;
-            border-left: 4px solid #2196F3;
+            background: rgba(59,130,246,0.10);
+            border-left: 4px solid rgba(59,130,246,0.85);
             margin: 0 30px;
             margin-top: 20px;
-            border-radius: 4px;
+            border-radius: 12px;
+            color: var(--text);
         }
         
         .info strong {
-            color: #1976D2;
+            color: rgba(59,130,246,0.95);
         }
         
         .json-container {
@@ -111,30 +141,31 @@
         }
         
         pre {
-            background: #282c34;
-            color: #abb2bf;
+            background: rgba(2, 6, 23, 0.88);
+            color: #d6e0ff;
             padding: 20px;
-            border-radius: 6px;
+            border-radius: 12px;
             overflow-x: auto;
             font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
             font-size: 13px;
             line-height: 1.6;
             white-space: pre-wrap;
             word-wrap: break-word;
+            border: 1px solid rgba(148,163,184,0.14);
         }
         
         .loading {
             text-align: center;
             padding: 40px;
-            color: #6c757d;
+            color: var(--muted);
         }
         
         .error {
-            background: #fff3cd;
-            border: 1px solid #ffc107;
-            color: #856404;
+            background: rgba(245, 158, 11, 0.14);
+            border: 1px solid rgba(245, 158, 11, 0.35);
+            color: #fbbf24;
             padding: 15px;
-            border-radius: 4px;
+            border-radius: 12px;
             margin: 20px 30px;
         }
         
@@ -142,8 +173,8 @@
             display: flex;
             gap: 20px;
             padding: 15px 30px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #dee2e6;
+            background: var(--stats-bg, rgba(15, 23, 42, 0.9));
+            border-bottom: 1px solid var(--border);
         }
         
         .stat-item {
@@ -153,15 +184,42 @@
         
         .stat-label {
             font-size: 12px;
-            color: #6c757d;
+            color: var(--muted);
             margin-bottom: 4px;
         }
         
         .stat-value {
             font-size: 18px;
             font-weight: 700;
-            color: #495057;
+            color: var(--text);
         }
+
+        /* [data-theme="light"] – 라이트 모드 */
+        [data-theme="light"] {
+            --bg: #f1f5f9;
+            --bg2: #e2e8f0;
+            --panel: rgba(255,255,255,0.98);
+            --border: rgba(0,0,0,0.08);
+            --text: #1e293b;
+            --muted: #64748b;
+            --stats-bg: #f8fafc;
+        }
+        [data-theme="light"] body {
+            background: linear-gradient(180deg, #f1f5f9, #e2e8f0);
+            color: var(--text);
+        }
+        [data-theme="light"] .header { color: #061023; }
+        [data-theme="light"] pre {
+            background: #f1f5f9;
+            color: #334155;
+            border-color: rgba(0,0,0,0.08);
+        }
+        .theme-toggle { display: inline-flex; gap: 4px; }
+        .btn-theme { padding: 8px 14px; font-size: 13px; border-radius: 8px; border: 1px solid rgba(148,163,184,0.2); cursor: pointer; font-weight: 600; background: transparent; color: inherit; }
+        [data-theme="dark"] .btn-theme#themeDark { background: linear-gradient(135deg, var(--blue), var(--blue2)); color: #061023; border-color: transparent; }
+        [data-theme="dark"] .btn-theme#themeLight { background: rgba(255,255,255,0.04); color: var(--muted); }
+        [data-theme="light"] .btn-theme#themeDark { background: #e2e8f0; color: #64748b; }
+        [data-theme="light"] .btn-theme#themeLight { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
     </style>
 </head>
 <body>
@@ -172,6 +230,10 @@
         </div>
         
         <div class="controls">
+            <span class="theme-toggle" role="group" aria-label="테마 선택">
+                <button type="button" class="btn-theme" id="themeDark" title="다크 모드">다크</button>
+                <button type="button" class="btn-theme" id="themeLight" title="라이트 모드">라이트</button>
+            </span>
             <div class="control-group">
                 <label for="checkType">점검 유형:</label>
                 <select id="checkType">
@@ -350,6 +412,26 @@
             });
         }
         
+        const THEME_KEY = 'reportTheme';
+        function getTheme() { return localStorage.getItem(THEME_KEY) || 'dark'; }
+        function setTheme(theme) {
+            theme = theme === 'light' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem(THEME_KEY, theme);
+            var d = document.getElementById('themeDark');
+            var l = document.getElementById('themeLight');
+            if (d) d.classList.toggle('active', theme === 'dark');
+            if (l) l.classList.toggle('active', theme === 'light');
+        }
+        function initTheme() {
+            setTheme(getTheme());
+            var d = document.getElementById('themeDark');
+            var l = document.getElementById('themeLight');
+            if (d) d.addEventListener('click', () => setTheme('dark'));
+            if (l) l.addEventListener('click', () => setTheme('light'));
+        }
+        initTheme();
+
         // 페이지 로드 시 자동으로 데이터 불러오기
         window.addEventListener('load', () => {
             loadData();

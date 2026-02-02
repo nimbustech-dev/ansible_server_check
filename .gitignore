@@ -22,6 +22,7 @@ ENV/
 # Logs and PID files
 *.log
 *.pid
+logs/
 
 # API Server
 api_server.log

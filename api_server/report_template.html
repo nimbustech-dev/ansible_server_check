@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DB 점검 결과 모니터링 대시보드</title>
+    <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('reportTheme') || 'dark');</script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * {
@@ -14,26 +15,28 @@
         }
 
         :root {
-            --bg: #f5f7fb;
-            --panel: #ffffff;
-            --border: #e5e7eb;
-            --text: #0f172a;
-            --muted: #64748b;
-            --primary: #1e3a8a;
-            --primary-2: #3b82f6;
-            --success: #16a34a;
-            --shadow: 0 14px 40px rgba(15, 23, 42, 0.10);
-            --shadow-sm: 0 6px 18px rgba(15, 23, 42, 0.08);
+            /* Always-dark theme (aligned with dashboard) */
+            --bg: #0b1020;
+            --panel: rgba(17, 24, 39, 0.78);
+            --border: rgba(148, 163, 184, 0.16);
+            --text: #e5e7eb;
+            --muted: #9aa6b2;
+            --primary: rgba(59, 130, 246, 0.95);
+            --primary-2: rgba(37, 99, 235, 0.95);
+            --success: #10b981;
+            --shadow: 0 18px 50px rgba(0,0,0,0.55);
+            --shadow-sm: 0 10px 26px rgba(0,0,0,0.45);
             --radius: 14px;
-            --table-head: #0b1220;
+            --table-head: rgba(2, 6, 23, 0.88);
         }
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
             background:
-                radial-gradient(1100px circle at 12% 0%, rgba(30, 58, 138, 0.10), transparent 55%),
-                radial-gradient(900px circle at 88% 20%, rgba(59, 130, 246, 0.10), transparent 55%),
-                var(--bg);
+                radial-gradient(1000px circle at 10% 0%, rgba(59,130,246,0.18), transparent 55%),
+                radial-gradient(900px circle at 90% 20%, rgba(16,185,129,0.10), transparent 55%),
+                radial-gradient(700px circle at 50% 110%, rgba(239,68,68,0.10), transparent 60%),
+                linear-gradient(180deg, var(--bg), #070b15);
             min-height: 100vh;
             padding: 20px;
             color: var(--text);
@@ -620,14 +623,13 @@
         }
 
         /* ==========================
-           Chic theme overrides
-           - 기존 기능/레이아웃 유지
+           [data-theme="dark"] – 다크 모드 (기본)
            ========================== */
-        .header,
-        .stat-card,
-        .chart-card,
-        .filter-section,
-        .table-section {
+        [data-theme="dark"] .header,
+        [data-theme="dark"] .stat-card,
+        [data-theme="dark"] .chart-card,
+        [data-theme="dark"] .filter-section,
+        [data-theme="dark"] .table-section {
             background: var(--panel) !important;
             border: 1px solid var(--border) !important;
             box-shadow: var(--shadow) !important;
@@ -635,57 +637,167 @@
             backdrop-filter: none !important;
         }
 
-        .header h1 {
+        [data-theme="dark"] .header h1,
+        [data-theme="dark"] .stat-card h3,
+        [data-theme="dark"] .stat-card .value,
+        [data-theme="dark"] .chart-card h3,
+        [data-theme="dark"] .filter-section h3,
+        [data-theme="dark"] .table-section h3 {
             color: var(--text) !important;
-            letter-spacing: -0.02em;
         }
 
-        .header-info,
-        .filter-group label {
+        [data-theme="dark"] .header h1 { letter-spacing: -0.02em; }
+
+        [data-theme="dark"] .header-info,
+        [data-theme="dark"] .filter-group label {
             color: var(--muted) !important;
         }
 
-        .status-indicator {
+        [data-theme="dark"] .stat-card .change { color: var(--success) !important; }
+
+        [data-theme="dark"] .status-indicator {
             background: var(--success) !important;
             animation: none !important;
             box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.14);
         }
 
-        .btn {
+        [data-theme="dark"] .btn {
             border-radius: 10px !important;
             border: 1px solid var(--border) !important;
             box-shadow: none !important;
         }
 
-        .btn-primary {
+        [data-theme="dark"] .btn-primary {
             background: var(--primary) !important;
             color: #fff !important;
         }
 
-        .btn-primary:hover {
+        [data-theme="dark"] .btn-primary:hover {
             transform: none !important;
             box-shadow: none !important;
             background: #163075 !important;
         }
 
-        .btn-secondary {
-            background: #f1f5f9 !important;
+        [data-theme="dark"] .btn-secondary {
+            background: rgba(255, 255, 255, 0.04) !important;
             color: var(--text) !important;
         }
 
-        .btn-secondary:hover {
-            background: #e2e8f0 !important;
+        [data-theme="dark"] .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.07) !important;
         }
 
-        thead {
+        [data-theme="dark"] .filter-group select,
+        [data-theme="dark"] .filter-group input {
+            background: rgba(15, 23, 42, 0.9) !important;
+            border-color: var(--border) !important;
+            color: var(--text) !important;
+        }
+
+        [data-theme="dark"] .detail-item-value {
+            background: rgba(255, 255, 255, 0.03) !important;
+            border: 1px solid rgba(148, 163, 184, 0.14) !important;
+            color: var(--text) !important;
+        }
+
+        [data-theme="dark"] .error-highlight {
+            background: rgba(239, 68, 68, 0.14) !important;
+            border-left-color: rgba(239, 68, 68, 0.85) !important;
+        }
+
+        [data-theme="dark"] .success-highlight {
+            background: rgba(16, 185, 129, 0.12) !important;
+            border-left-color: rgba(16, 185, 129, 0.85) !important;
+        }
+
+        [data-theme="dark"] thead {
             background: var(--table-head) !important;
+            color: var(--text) !important;
         }
 
-        th {
+        [data-theme="dark"] th {
             text-transform: none !important;
             letter-spacing: 0 !important;
             font-size: 12px;
+            color: var(--text) !important;
         }
+
+        /* 테이블 본문 다크 */
+        [data-theme="dark"] .table-section table {
+            background: var(--panel) !important;
+        }
+
+        [data-theme="dark"] .table-section tbody tr {
+            border-bottom-color: var(--border) !important;
+        }
+
+        [data-theme="dark"] .table-section tbody tr:nth-child(even) {
+            background: rgba(255, 255, 255, 0.03) !important;
+        }
+
+        [data-theme="dark"] .table-section tbody tr:hover {
+            background: rgba(255, 255, 255, 0.07) !important;
+        }
+
+        [data-theme="dark"] .table-section tbody tr.error-row:hover {
+            background: rgba(239, 68, 68, 0.14) !important;
+        }
+
+        [data-theme="dark"] .table-section td {
+            color: var(--text) !important;
+            border-right-color: var(--border) !important;
+        }
+
+        [data-theme="dark"] .table-scrollbar-top {
+            background: rgba(15, 23, 42, 0.9) !important;
+        }
+
+        [data-theme="dark"] .table-scrollbar-top::-webkit-scrollbar-track {
+            background: rgba(30, 41, 59, 0.8) !important;
+        }
+
+        [data-theme="dark"] .table-scrollbar-top::-webkit-scrollbar-thumb {
+            background: var(--primary) !important;
+            border-color: rgba(30, 41, 59, 0.8) !important;
+        }
+
+        [data-theme="dark"] .modal-content {
+            background: var(--panel) !important;
+            border: 1px solid var(--border) !important;
+        }
+
+        [data-theme="dark"] .modal-header,
+        [data-theme="dark"] .modal-header h2,
+        [data-theme="dark"] .detail-section h3,
+        [data-theme="dark"] .detail-item-label {
+            color: var(--text) !important;
+            border-color: var(--border) !important;
+        }
+
+        [data-theme="dark"] .modal-body,
+        [data-theme="dark"] .detail-item {
+            color: var(--muted) !important;
+            background: rgba(255, 255, 255, 0.03) !important;
+            border-left-color: var(--primary) !important;
+        }
+
+        [data-theme="dark"] .modal-close { color: var(--muted) !important; }
+        [data-theme="dark"] .modal-close:hover { background: rgba(255,255,255,0.07) !important; color: var(--text) !important; }
+
+        /* ==========================
+           [data-theme="light"] – 라이트 모드 명시
+           ========================== */
+        [data-theme="light"] body {
+            background: linear-gradient(180deg, #f1f5f9, #e2e8f0);
+            color: #1e293b;
+        }
+
+        .theme-toggle { display: flex; gap: 4px; }
+        .btn-theme { padding: 8px 14px; font-size: 13px; }
+        [data-theme="dark"] .btn-theme#themeDark { background: var(--primary) !important; color: #fff !important; }
+        [data-theme="dark"] .btn-theme#themeLight { background: rgba(255,255,255,0.04) !important; color: var(--muted) !important; }
+        [data-theme="light"] .btn-theme#themeDark { background: #e2e8f0 !important; color: #64748b !important; }
+        [data-theme="light"] .btn-theme#themeLight { background: #1e3a8a !important; color: #fff !important; }
     </style>
 </head>
 <body>
@@ -701,6 +813,10 @@
                 </div>
             </div>
             <div class="controls">
+                <span class="theme-toggle" role="group" aria-label="테마 선택">
+                    <button type="button" class="btn btn-theme" id="themeDark" title="다크 모드">다크</button>
+                    <button type="button" class="btn btn-theme" id="themeLight" title="라이트 모드">라이트</button>
+                </span>
                 <button class="btn btn-primary" onclick="loadData()">새로고침</button>
             </div>
         </div>
@@ -779,7 +895,7 @@
                 <div class="filter-group">
                     <label>날짜</label>
                     <select id="filterDate" onchange="applyFilters()">
-                        <option value="">전체</option>
+                        <option value="" selected>전체</option>
                         <option value="today">오늘</option>
                         <option value="week">최근 7일</option>
                         <option value="month">최근 30일</option>
@@ -981,7 +1097,9 @@
             const now = new Date();
             let dateFilter = null;
             
-            if (filterDate === 'today') {
+            if (filterDate === '' || filterDate === 'all') {
+                dateFilter = () => true;
+            } else if (filterDate === 'today') {
                 const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                 dateFilter = (date) => new Date(date) >= today;
             } else if (filterDate === 'week') {
@@ -1579,8 +1697,25 @@
             }
         });
         
+        // 테마: 기본 다크, localStorage 유지
+        const THEME_KEY = 'reportTheme';
+        function getTheme() { return localStorage.getItem(THEME_KEY) || 'dark'; }
+        function setTheme(theme) {
+            theme = theme === 'light' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem(THEME_KEY, theme);
+            document.getElementById('themeDark').classList.toggle('active', theme === 'dark');
+            document.getElementById('themeLight').classList.toggle('active', theme === 'light');
+        }
+        function initTheme() {
+            setTheme(getTheme());
+            document.getElementById('themeDark').addEventListener('click', () => setTheme('dark'));
+            document.getElementById('themeLight').addEventListener('click', () => setTheme('light'));
+        }
+
         // 초기화
         document.addEventListener('DOMContentLoaded', () => {
+            initTheme();
             initCharts();
             loadData();
             connectWebSocket();

@@ -1650,10 +1650,43 @@ async def was_checks_report():
 @app.get("/api/report", response_class=HTMLResponse)
 async def unified_report():
     """
-    통합 점검 결과 리포트 - DB, OS, WAS를 탭으로 통합
+    통합 점검 결과 대시보드 (신규)
     
     Returns:
-        HTML 형식의 통합 리포트
+        HTML 형식의 대시보드
+    """
+    try:
+        import os
+        template_path = os.path.join(os.path.dirname(__file__), "dashboard_template.html")
+        with open(template_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        
+        return HTMLResponse(content=html)
+        
+    except Exception as e:
+        error_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>오류</title>
+        </head>
+        <body>
+            <h1>오류 발생</h1>
+            <p>{str(e)}</p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=error_html, status_code=500)
+
+
+@app.get("/api/report-legacy", response_class=HTMLResponse)
+async def unified_report_legacy():
+    """
+    통합 점검 결과 리포트 (레거시) - DB, OS, WAS를 탭/iframe으로 통합
+    
+    Returns:
+        HTML 형식의 통합 리포트(레거시)
     """
     try:
         import os
@@ -1719,11 +1752,11 @@ async def dashboard():
     대시보드 - 통합 점검 결과 리포트 (DB, OS, WAS를 탭으로 통합)
     
     Returns:
-        HTML 형식의 통합 리포트
+        HTML 형식의 대시보드
     """
     try:
         import os
-        template_path = os.path.join(os.path.dirname(__file__), "unified_report_template.html")
+        template_path = os.path.join(os.path.dirname(__file__), "dashboard_template.html")
         with open(template_path, "r", encoding="utf-8") as f:
             html = f.read()
         

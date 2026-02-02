@@ -207,13 +207,7 @@ ansible-playbook -i hosts.ini tomcat_check/tomcat_check.yml
 - `auto_update_smart.sh`
 - `auto_update_and_restart.sh`
 
-### Windows/PowerShell 보조
-
-- `run_was_check.ps1`, `run_was_check.bat`
-- `restart_api_server.ps1`
-- `check_api_status.ps1`
-
-### 로그/상태 파일
+### 로그/상태 파일 (실행 시 생성, .gitignore 대상)
 
 - `api_server.log`: API 서버 로그
 - `api_auto_update.log`: 자동 업데이트 로그

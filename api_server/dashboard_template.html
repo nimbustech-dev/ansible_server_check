@@ -1,0 +1,1641 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>서버 점검 모니터링 대시보드</title>
+  <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('reportTheme') || 'dark');</script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Noto Sans KR', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+
+    :root{
+      /* Always-dark theme */
+      --bg: #0b1020;
+      --bg-2: #070b15;
+      --panel: rgba(17, 24, 39, 0.78);
+      --panel-solid: #111827;
+      --border: rgba(148, 163, 184, 0.16);
+      --text: #e5e7eb;
+      --muted: #9aa6b2;
+      --muted-2: #728195;
+
+      --blue: #3b82f6;
+      --green: #10b981;
+      --red: #ef4444;
+      --amber: #f59e0b;
+
+      --shadow: 0 18px 50px rgba(0,0,0,0.55);
+      --shadow-sm: 0 10px 26px rgba(0,0,0,0.45);
+      --radius: 14px;
+    }
+
+    body{
+      background:
+        radial-gradient(1000px circle at 10% 0%, rgba(59,130,246,0.18), transparent 55%),
+        radial-gradient(900px circle at 90% 20%, rgba(16,185,129,0.10), transparent 55%),
+        radial-gradient(700px circle at 50% 110%, rgba(239,68,68,0.10), transparent 60%),
+        linear-gradient(180deg, var(--bg), var(--bg-2));
+      color: var(--text);
+      padding: 22px;
+      min-height: 100vh;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .container{
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* Header */
+    .topbar{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 18px;
+      border-radius: var(--radius);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+      backdrop-filter: blur(10px);
+    }
+
+    .topbar .title{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .topbar h1{
+      font-size: 1.2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .subline{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      align-items: center;
+    }
+
+    .pill{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(148,163,184,0.16);
+    }
+
+    .dot{
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 0 4px rgba(16,185,129,0.12);
+    }
+    .dot.disconnected{
+      background: var(--red);
+      box-shadow: 0 0 0 4px rgba(239,68,68,0.12);
+    }
+
+    .actions{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .btn{
+      padding: 9px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(148,163,184,0.18);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font-weight: 700;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: transform .15s ease, background .15s ease, border-color .15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn:hover{
+      transform: translateY(-1px);
+      background: rgba(255,255,255,0.07);
+      border-color: rgba(148,163,184,0.28);
+    }
+
+    .btn-primary{
+      background: linear-gradient(135deg, rgba(59,130,246,0.90), rgba(37,99,235,0.90));
+      border-color: rgba(59,130,246,0.55);
+    }
+
+    .btn-primary:hover{
+      background: linear-gradient(135deg, rgba(59,130,246,1), rgba(37,99,235,1));
+      border-color: rgba(59,130,246,0.75);
+    }
+
+    /* KPI */
+    .kpi-section{
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .card{
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+      min-height: 112px;
+    }
+
+    .card::before{
+      content:'';
+      position:absolute;
+      inset:-1px;
+      background:
+        radial-gradient(700px circle at 10% 0%, rgba(59,130,246,0.14), transparent 60%),
+        radial-gradient(700px circle at 90% 100%, rgba(16,185,129,0.10), transparent 60%);
+      opacity: .9;
+      pointer-events:none;
+    }
+
+    .card > * { position: relative; z-index: 1; }
+
+    .card-header{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-weight: 800;
+      font-size: 0.9rem;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .badge-icon{
+      width: 26px;
+      height: 26px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #081022;
+      font-size: 12px;
+      font-weight: 900;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.35);
+    }
+
+    .bg-blue{ background: linear-gradient(135deg, #60a5fa, #3b82f6); }
+    .bg-green{ background: linear-gradient(135deg, #34d399, #10b981); }
+    .bg-red{ background: linear-gradient(135deg, #fb7185, #ef4444); }
+    .bg-amber{ background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+
+    .card-value{
+      font-size: 2rem;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .card-sub{
+      margin-top: 6px;
+      font-size: 0.85rem;
+      color: var(--muted-2);
+    }
+
+    .neon-bar{
+      height: 4px;
+      border-radius: 2px;
+      margin-top: 12px;
+      box-shadow: 0 0 14px currentColor;
+      opacity: 0.95;
+    }
+    .text-blue{ color: var(--blue); background: var(--blue); }
+    .text-green{ color: var(--green); background: var(--green); }
+    .text-red{ color: var(--red); background: var(--red); }
+    .text-amber{ color: var(--amber); background: var(--amber); }
+
+    /* Main grid */
+    .main-content{
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+    }
+    .left-panel, .right-panel{ display: flex; flex-direction: column; gap: 16px; }
+
+    /* Charts row */
+    .charts-row{
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow-sm);
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 16px;
+      backdrop-filter: blur(10px);
+    }
+
+    .section-title{
+      font-size: 1rem;
+      font-weight: 900;
+      margin-bottom: 12px;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    .mini-title{
+      font-size: 0.9rem;
+      color: var(--muted);
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+
+    .chart-container{
+      position: relative;
+      height: 200px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .donut-center-text{
+      position: absolute;
+      text-align: center;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 0.9rem;
+      font-weight: 900;
+      color: var(--muted);
+      pointer-events: none;
+    }
+    .donut-center-text span{
+      display: block;
+      font-size: 1.15rem;
+      color: var(--text);
+      margin-top: 4px;
+    }
+
+    /* Table card */
+    .table-card{
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow-sm);
+      backdrop-filter: blur(10px);
+    }
+
+    table{
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th{
+      text-align: left;
+      padding: 12px 10px;
+      background: rgba(255,255,255,0.04);
+      color: var(--muted);
+      font-size: 0.85rem;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      border-bottom: 1px solid rgba(148,163,184,0.14);
+    }
+    th:first-child{ border-top-left-radius: 10px; border-bottom-left-radius: 10px; padding-left: 14px; }
+    th:last-child{ border-top-right-radius: 10px; border-bottom-right-radius: 10px; }
+
+    td{
+      padding: 14px 10px;
+      border-bottom: 1px solid rgba(148,163,184,0.10);
+      font-size: 0.95rem;
+      color: var(--text);
+      vertical-align: middle;
+    }
+    td:first-child{ padding-left: 14px; }
+
+    tr.clickable:hover td{
+      background: rgba(255,255,255,0.04);
+      cursor: pointer;
+    }
+
+    /* Status badge */
+    .status-badge{
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 900;
+      color: #061023;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 56px;
+      letter-spacing: 0.02em;
+    }
+    .badge-error{ background: linear-gradient(135deg, #fb7185, #ef4444); box-shadow: 0 10px 22px rgba(239,68,68,0.26); }
+    .badge-warning{ background: linear-gradient(135deg, #fbbf24, #f59e0b); box-shadow: 0 10px 22px rgba(245,158,11,0.22); }
+    .badge-normal{ background: linear-gradient(135deg, #34d399, #10b981); box-shadow: 0 10px 22px rgba(16,185,129,0.18); }
+    .badge-unknown{ background: linear-gradient(135deg, #cbd5e1, #94a3b8); box-shadow: 0 10px 22px rgba(148,163,184,0.16); }
+
+    /* Right panel cards */
+    .trend-card, .feed-card{
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow-sm);
+      backdrop-filter: blur(10px);
+    }
+
+    .feed-list{
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      margin-top: 8px;
+    }
+
+    .feed-item{
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(148,163,184,0.10);
+    }
+    .feed-item:last-child{ border-bottom: none; }
+    .feed-item:hover{ cursor: pointer; background: rgba(255,255,255,0.03); }
+
+    .feed-left{
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .feed-server{
+      font-weight: 800;
+      font-size: 0.95rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .feed-meta{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .feed-type{
+      color: rgba(148, 163, 184, 0.95);
+      font-weight: 700;
+    }
+
+    /* Filter panel */
+    .filter-card{
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      box-shadow: var(--shadow-sm);
+      backdrop-filter: blur(10px);
+    }
+    .filter-title{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .filter-title h2{
+      font-size: 0.95rem;
+      font-weight: 900;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+    .filter-row{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      align-items: flex-end;
+    }
+    .filter-group{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 180px;
+    }
+    .filter-group label{
+      font-size: 0.78rem;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .select, .input{
+      height: 40px;
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,0.18);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      padding: 0 12px;
+      outline: none;
+      transition: border-color .15s ease, background .15s ease;
+    }
+    .select:focus, .input:focus{
+      border-color: rgba(59,130,246,0.65);
+      background: rgba(255,255,255,0.06);
+    }
+    .chips{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      padding: 2px 0;
+    }
+    .chip{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.18);
+      background: rgba(255,255,255,0.03);
+      cursor: pointer;
+      user-select: none;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .chip input{ accent-color: var(--blue); }
+    .chip:hover{ background: rgba(255,255,255,0.06); }
+    .filter-actions{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-left: auto;
+    }
+
+    /* Toast */
+    .toast-wrap{
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 2000;
+      pointer-events: none;
+    }
+    .toast{
+      pointer-events: none;
+      min-width: 260px;
+      max-width: 420px;
+      padding: 12px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.22);
+      background: rgba(2, 6, 23, 0.88);
+      box-shadow: var(--shadow-sm);
+      color: var(--text);
+    }
+    .toast .t-title{ font-weight: 900; margin-bottom: 4px; }
+    .toast .t-msg{ color: var(--muted); font-weight: 700; font-size: 0.9rem; }
+
+    /* Skeleton */
+    .skeleton{
+      position: relative;
+      overflow: hidden;
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+    }
+    .skeleton::after{
+      content:'';
+      position:absolute;
+      inset:0;
+      transform: translateX(-60%);
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent);
+      animation: shimmer 1.1s infinite;
+    }
+    @keyframes shimmer{
+      0% { transform: translateX(-60%); }
+      100% { transform: translateX(60%); }
+    }
+
+    /* Modal summary */
+    .summary-grid{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .summary-item{
+      padding: 10px 10px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(148,163,184,0.14);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+    .summary-item .label{
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .summary-item .meta{
+      color: var(--muted);
+      font-size: 0.82rem;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    /* Modal */
+    .modal-overlay{
+      position: fixed;
+      inset: 0;
+      display: none;
+      background: rgba(0,0,0,0.55);
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      z-index: 999;
+    }
+    .modal-overlay.active{ display: flex; }
+    .modal{
+      width: min(960px, 100%);
+      max-height: 85vh;
+      overflow: hidden;
+      border-radius: 16px;
+      background: #0b1220;
+      border: 1px solid rgba(148,163,184,0.20);
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-header{
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid rgba(148,163,184,0.14);
+    }
+    .modal-header h3{
+      font-size: 1rem;
+      font-weight: 900;
+      letter-spacing: -0.01em;
+    }
+    .modal-close{
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(148,163,184,0.18);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-weight: 900;
+    }
+    .modal-body{
+      padding: 14px 16px;
+      overflow: auto;
+    }
+    pre{
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(148,163,184,0.14);
+      border-radius: 12px;
+      padding: 12px;
+      color: #d6e0ff;
+      line-height: 1.45;
+      font-size: 0.9rem;
+      overflow: auto;
+    }
+
+    /* [data-theme="light"] – 라이트 모드 */
+    [data-theme="light"]{
+      --bg: #f1f5f9;
+      --bg-2: #e2e8f0;
+      --panel: rgba(255,255,255,0.95);
+      --panel-solid: #f8fafc;
+      --border: rgba(0,0,0,0.08);
+      --text: #1e293b;
+      --muted: #64748b;
+      --muted-2: #94a3b8;
+      --shadow: 0 10px 30px rgba(0,0,0,0.08);
+      --shadow-sm: 0 4px 14px rgba(0,0,0,0.06);
+    }
+    [data-theme="light"] body{
+      background: linear-gradient(180deg, #f1f5f9, #e2e8f0);
+      color: var(--text);
+    }
+    [data-theme="light"] .pill{
+      background: rgba(0,0,0,0.04);
+      border-color: rgba(0,0,0,0.08);
+    }
+    [data-theme="light"] .btn{
+      background: rgba(0,0,0,0.04);
+      border-color: rgba(0,0,0,0.1);
+      color: var(--text);
+    }
+    [data-theme="light"] .btn:hover{
+      background: rgba(0,0,0,0.07);
+      border-color: rgba(0,0,0,0.14);
+    }
+    [data-theme="light"] .modal{ background: #fff; border-color: rgba(0,0,0,0.1); }
+    [data-theme="light"] .modal-header{ border-color: rgba(0,0,0,0.08); }
+    [data-theme="light"] .modal-close{ background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.1); color: var(--text); }
+    [data-theme="light"] pre{ background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); color: #334155; }
+    .theme-toggle{ display: inline-flex; gap: 4px; }
+    .btn-theme{ padding: 8px 12px; font-size: 0.85rem; }
+    [data-theme="dark"] .btn-theme#themeDark{ background: linear-gradient(135deg, rgba(59,130,246,0.9), rgba(37,99,235,0.9)); color: #fff; border-color: rgba(59,130,246,0.55); }
+    [data-theme="dark"] .btn-theme#themeLight{ background: rgba(255,255,255,0.04); color: var(--muted); }
+    [data-theme="light"] .btn-theme#themeDark{ background: rgba(0,0,0,0.06); color: #64748b; }
+    [data-theme="light"] .btn-theme#themeLight{ background: linear-gradient(135deg, #1e3a8a, #3b82f6); color: #fff; border-color: rgba(59,130,246,0.5); }
+
+    /* Responsive */
+    @media (max-width: 1024px){
+      .kpi-section{ grid-template-columns: 1fr 1fr; }
+      .main-content{ grid-template-columns: 1fr; }
+      .charts-row{ grid-template-columns: 1fr; }
+      .actions{ justify-content: flex-start; }
+      .topbar{ align-items: flex-start; flex-direction: column; }
+      .filter-group{ min-width: 140px; }
+    }
+    @media (max-width: 680px){
+      .summary-grid{ grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="title">
+        <h1>서버 점검 모니터링 대시보드</h1>
+        <div class="subline">
+          <span class="pill"><span class="dot" id="wsDot"></span> <span id="wsStatusText">실시간 연결</span></span>
+          <span class="pill" id="updateTime">업데이트: -</span>
+          <span class="pill" id="dataSummary">데이터: -</span>
+        </div>
+      </div>
+      <div class="actions">
+        <span class="theme-toggle" role="group" aria-label="테마 선택">
+          <button type="button" class="btn btn-theme" id="themeDark" title="다크 모드">다크</button>
+          <button type="button" class="btn btn-theme" id="themeLight" title="라이트 모드">라이트</button>
+        </span>
+        <button class="btn" onclick="reloadDashboard()">새로고침</button>
+        <a class="btn btn-primary" href="/api/db-checks/report" target="_blank" rel="noreferrer">DB 리포트</a>
+        <a class="btn btn-primary" href="/api/os-checks/report" target="_blank" rel="noreferrer">OS 리포트</a>
+        <a class="btn btn-primary" href="/api/was-checks/report" target="_blank" rel="noreferrer">WAS 리포트</a>
+        <a class="btn" href="/api/report-legacy" target="_blank" rel="noreferrer">통합(기존)</a>
+      </div>
+    </div>
+
+    <!-- KPI -->
+    <div class="kpi-section">
+      <div class="card">
+        <div class="card-header"><div class="badge-icon bg-blue">A</div> 전체 점검 건수</div>
+        <div class="card-value" id="kpiTotalChecks">-</div>
+        <div class="card-sub" id="kpiTotalChecksSub">최근 데이터 기준</div>
+        <div class="neon-bar text-blue"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="badge-icon bg-amber">T</div> 오늘 점검 건수</div>
+        <div class="card-value" id="kpiTodayChecks">-</div>
+        <div class="card-sub" id="kpiTodayChecksSub">로컬 시간 기준</div>
+        <div class="neon-bar text-amber"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="badge-icon bg-green">S</div> 정상 서버</div>
+        <div class="card-value" id="kpiHealthyHosts">-</div>
+        <div class="card-sub" id="kpiHostsSub">호스트별 최신 상태</div>
+        <div class="neon-bar text-green"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="badge-icon bg-red">E</div> 경고/에러 서버</div>
+        <div class="card-value" id="kpiProblemHosts">-</div>
+        <div class="card-sub" id="kpiProblemSub">호스트별 최신 상태</div>
+        <div class="neon-bar text-red"></div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-card">
+      <div class="filter-title">
+        <h2>필터</h2>
+        <div class="filter-actions">
+          <button class="btn" onclick="resetFilters()">초기화</button>
+        </div>
+      </div>
+      <div class="filter-row">
+        <div class="filter-group" style="min-width: 140px;">
+          <label for="filterRange">기간</label>
+          <select class="select" id="filterRange">
+            <option value="all" selected>전체</option>
+            <option value="today">오늘</option>
+            <option value="7d">7일</option>
+            <option value="30d">30일</option>
+          </select>
+        </div>
+
+        <div class="filter-group" style="min-width: 280px;">
+          <label>유형(멀티)</label>
+          <div class="chips">
+            <label class="chip"><input type="checkbox" id="typeOS" checked> OS</label>
+            <label class="chip"><input type="checkbox" id="typeDB" checked> DB</label>
+            <label class="chip"><input type="checkbox" id="typeWAS" checked> WAS</label>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <label for="filterHostname">호스트명</label>
+          <input class="input" id="filterHostname" type="text" placeholder="예: nimbus" />
+        </div>
+
+        <div class="filter-group">
+          <label for="filterChecker">담당자</label>
+          <input class="input" id="filterChecker" type="text" placeholder="예: 성태환" />
+        </div>
+
+        <div class="filter-group" style="min-width: 220px;">
+          <label>실시간 반영</label>
+          <div class="chips">
+            <label class="chip"><input type="checkbox" id="autoRefresh" checked> 자동 새로고침</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main content -->
+    <div class="main-content">
+      <div class="left-panel">
+        <div class="charts-row">
+          <div style="position: relative;">
+            <div class="mini-title">전체 성공 비율</div>
+            <div class="chart-container">
+              <canvas id="donutChart"></canvas>
+              <div class="donut-center-text">총<br><span id="donutTotalText">-</span></div>
+            </div>
+          </div>
+          <div>
+            <div class="mini-title">유형별 점검 건수</div>
+            <div class="chart-container" style="height: 180px;">
+              <canvas id="barChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <div class="section-title">문제 서버 목록 (Priority)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>서버명</th>
+                <th>점검 유형</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody id="problemTableBody">
+              <tr><td colspan="3" style="color: var(--muted); padding: 18px 14px;">데이터를 불러오는 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="right-panel">
+        <div class="trend-card">
+          <div class="section-title" style="margin-bottom: 10px;">최근 7일간 점검 건수 추이</div>
+          <div class="chart-container" style="height: 160px;">
+            <canvas id="lineChart"></canvas>
+          </div>
+        </div>
+
+        <div class="feed-card">
+          <div class="section-title" style="margin-bottom: 10px;">최근 점검 피드</div>
+          <div class="feed-list" id="feedList">
+            <div class="feed-item" style="color: var(--muted);">데이터를 불러오는 중...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="detailModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">상세 정보</h3>
+        <button class="modal-close" onclick="closeModal()">닫기</button>
+      </div>
+      <div class="modal-body">
+        <div id="modalSummary"></div>
+        <pre id="modalPre">-</pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let donutChart = null;
+    let barChart = null;
+    let lineChart = null;
+    let ws = null;
+
+    const TYPE_LABEL = {
+      os: 'OS',
+      was: 'WAS',
+      mariadb: 'MariaDB',
+      postgresql: 'PostgreSQL',
+      cubrid: 'CUBRID'
+    };
+
+    const CATEGORY_LABEL = {
+      os: 'OS',
+      db: 'DB',
+      was: 'WAS'
+    };
+
+    const DB_TYPES = new Set(['mariadb', 'postgresql', 'cubrid']);
+
+    function categoryForCheckType(checkTypeRaw) {
+      const t = String(checkTypeRaw || '').toLowerCase();
+      if (t === 'os') return 'os';
+      if (t === 'was') return 'was';
+      if (DB_TYPES.has(t)) return 'db';
+      return 'other';
+    }
+
+    function safeParseDate(s) {
+      if (!s) return null;
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function getRecordTime(r) {
+      // Prefer check_time (Ansible ISO8601), fallback to created_at
+      return safeParseDate(r.check_time) || safeParseDate(r.created_at) || null;
+    }
+
+    function formatDateTime(d) {
+      if (!d) return 'N/A';
+      try {
+        return d.toLocaleString('ko-KR');
+      } catch {
+        return String(d);
+      }
+    }
+
+    function normalizeStatus(s) {
+      const v = String(s || '').toLowerCase();
+      if (v.includes('success')) return 'success';
+      if (v.includes('warn')) return 'warning';
+      if (v.includes('error')) return 'error';
+      return 'unknown';
+    }
+
+    function statusBadgeHtml(statusRaw) {
+      const s = normalizeStatus(statusRaw);
+      if (s === 'success') return '<span class="status-badge badge-normal">정상</span>';
+      if (s === 'warning') return '<span class="status-badge badge-warning">경고</span>';
+      if (s === 'error') return '<span class="status-badge badge-error">에러</span>';
+      return '<span class="status-badge badge-unknown">기타</span>';
+    }
+
+    function severityRank(statusRaw) {
+      const s = normalizeStatus(statusRaw);
+      if (s === 'error') return 2;
+      if (s === 'warning') return 1;
+      if (s === 'success') return 0;
+      return -1;
+    }
+
+    function destroyChart(chart) {
+      try { if (chart) chart.destroy(); } catch {}
+      return null;
+    }
+
+    function openModal(title, obj, summaryHtml) {
+      document.getElementById('modalTitle').textContent = title || '상세 정보';
+      document.getElementById('modalPre').textContent = JSON.stringify(obj, null, 2);
+      document.getElementById('modalSummary').innerHTML = summaryHtml || '';
+      document.getElementById('detailModal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('detailModal').classList.remove('active');
+    }
+
+    document.getElementById('detailModal').addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'detailModal') closeModal();
+    });
+
+    async function fetchChecks(limit = 2000) {
+      const url = `/api/checks?limit=${encodeURIComponent(limit)}&t=${Date.now()}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!data || !data.success) throw new Error(data && data.detail ? data.detail : '데이터 로드 실패');
+      return data.results || [];
+    }
+
+    const FILTER_STORAGE_KEY = 'dashboardFiltersV1';
+
+    function defaultFilterState() {
+      return {
+        range: 'all',
+        types: { os: true, db: true, was: true },
+        hostname: '',
+        checker: '',
+        autoRefresh: true
+      };
+    }
+
+    function loadFilterState() {
+      try {
+        const raw = localStorage.getItem(FILTER_STORAGE_KEY);
+        if (!raw) return defaultFilterState();
+        const obj = JSON.parse(raw);
+        const d = defaultFilterState();
+        return {
+          ...d,
+          ...obj,
+          types: { ...d.types, ...(obj.types || {}) },
+        };
+      } catch {
+        return defaultFilterState();
+      }
+    }
+
+    function saveFilterState(state) {
+      try {
+        localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state));
+      } catch {}
+    }
+
+    let filterState = loadFilterState();
+    let debounceTimer = null;
+
+    function debounceReload() {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        saveFilterState(filterState);
+        reloadDashboard();
+      }, 250);
+    }
+
+    function syncFilterUiFromState() {
+      const rangeEl = document.getElementById('filterRange');
+      const hostEl = document.getElementById('filterHostname');
+      const checkerEl = document.getElementById('filterChecker');
+      const osEl = document.getElementById('typeOS');
+      const dbEl = document.getElementById('typeDB');
+      const wasEl = document.getElementById('typeWAS');
+      const autoEl = document.getElementById('autoRefresh');
+
+      if (rangeEl) rangeEl.value = filterState.range || '7d';
+      if (hostEl) hostEl.value = filterState.hostname || '';
+      if (checkerEl) checkerEl.value = filterState.checker || '';
+      if (osEl) osEl.checked = !!filterState.types.os;
+      if (dbEl) dbEl.checked = !!filterState.types.db;
+      if (wasEl) wasEl.checked = !!filterState.types.was;
+      if (autoEl) autoEl.checked = !!filterState.autoRefresh;
+    }
+
+    function attachFilterHandlers() {
+      const rangeEl = document.getElementById('filterRange');
+      const hostEl = document.getElementById('filterHostname');
+      const checkerEl = document.getElementById('filterChecker');
+      const osEl = document.getElementById('typeOS');
+      const dbEl = document.getElementById('typeDB');
+      const wasEl = document.getElementById('typeWAS');
+      const autoEl = document.getElementById('autoRefresh');
+
+      if (rangeEl) rangeEl.addEventListener('change', () => {
+        filterState.range = rangeEl.value;
+        debounceReload();
+      });
+      if (hostEl) hostEl.addEventListener('input', () => {
+        filterState.hostname = hostEl.value || '';
+        debounceReload();
+      });
+      if (checkerEl) checkerEl.addEventListener('input', () => {
+        filterState.checker = checkerEl.value || '';
+        debounceReload();
+      });
+      if (osEl) osEl.addEventListener('change', () => {
+        filterState.types.os = !!osEl.checked;
+        debounceReload();
+      });
+      if (dbEl) dbEl.addEventListener('change', () => {
+        filterState.types.db = !!dbEl.checked;
+        debounceReload();
+      });
+      if (wasEl) wasEl.addEventListener('change', () => {
+        filterState.types.was = !!wasEl.checked;
+        debounceReload();
+      });
+      if (autoEl) autoEl.addEventListener('change', () => {
+        filterState.autoRefresh = !!autoEl.checked;
+        saveFilterState(filterState);
+      });
+    }
+
+    function resetFilters() {
+      filterState = defaultFilterState();
+      syncFilterUiFromState();
+      saveFilterState(filterState);
+      reloadDashboard();
+      showToast('필터 초기화', '기본값(7일·전체 유형)으로 초기화했습니다.');
+    }
+
+    function showToast(title, msg) {
+      const wrap = document.getElementById('toastWrap');
+      if (!wrap) return;
+      const el = document.createElement('div');
+      el.className = 'toast';
+      el.innerHTML = `<div class="t-title">${escapeHtml(title)}</div><div class="t-msg">${escapeHtml(msg || '')}</div>`;
+      wrap.appendChild(el);
+      setTimeout(() => {
+        try { wrap.removeChild(el); } catch {}
+      }, 2500);
+    }
+
+    function selectedCategorySet() {
+      const set = new Set();
+      if (filterState.types.os) set.add('os');
+      if (filterState.types.db) set.add('db');
+      if (filterState.types.was) set.add('was');
+      return set;
+    }
+
+    function applyDashboardFilters(results) {
+      const hostQ = (filterState.hostname || '').trim().toLowerCase();
+      const checkerQ = (filterState.checker || '').trim().toLowerCase();
+      const catSet = selectedCategorySet();
+
+      // Period filter
+      let dayKeySet = null;
+      if (filterState.range === 'all') {
+        dayKeySet = null;
+      } else if (filterState.range === 'today') {
+        dayKeySet = new Set([toKstDayKey(new Date())]);
+      } else if (filterState.range === '7d') {
+        dayKeySet = new Set(getLastNDaysKeys(7));
+      } else if (filterState.range === '30d') {
+        dayKeySet = new Set(getLastNDaysKeys(30));
+      }
+
+      return results.filter(r => {
+        const cat = categoryForCheckType(r.check_type);
+        if (cat === 'other') return false;
+        if (!catSet.has(cat)) return false;
+
+        const t = getRecordTime(r);
+        if (dayKeySet) {
+          if (!t) return false;
+          if (!dayKeySet.has(toKstDayKey(t))) return false;
+        }
+
+        if (hostQ) {
+          const host = String(r.hostname || '').toLowerCase();
+          if (!host.includes(hostQ)) return false;
+        }
+        if (checkerQ) {
+          const checker = String(r.checker || '').toLowerCase();
+          if (!checker.includes(checkerQ)) return false;
+        }
+        return true;
+      });
+    }
+
+    function toKstDayKey(d) {
+      // KST = UTC+9
+      const kstMs = d.getTime() + 9 * 60 * 60 * 1000;
+      const kst = new Date(kstMs);
+      const y = kst.getUTCFullYear();
+      const m = String(kst.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(kst.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function getLastNDaysKeys(n = 7) {
+      const keys = [];
+      const now = new Date();
+      const todayKstKey = toKstDayKey(now);
+      // Build from today backwards using KST-midnight stepping via UTC keys
+      let cursor = now;
+      for (let i = 0; i < n; i++) {
+        keys.push(toKstDayKey(cursor));
+        cursor = new Date(cursor.getTime() - 24 * 60 * 60 * 1000);
+      }
+      // Ensure uniqueness and chronological order (oldest -> newest)
+      return Array.from(new Set(keys)).reverse();
+    }
+
+    function isTodayKst(d) {
+      return toKstDayKey(d) === toKstDayKey(new Date());
+    }
+
+    function aggregate(results) {
+      const totalChecks = results.length;
+      const now = new Date();
+      const todayChecks = results.filter(r => {
+        const t = getRecordTime(r);
+        return t ? isTodayKst(t) : false;
+      }).length;
+
+      // Host x Category (OS/DB/WAS) latest record
+      const latestByHostAndCategory = new Map(); // host -> Map(category -> record)
+      for (const r of results) {
+        const host = r.hostname || 'N/A';
+        const category = categoryForCheckType(r.check_type);
+        if (category === 'other') continue;
+
+        let byCat = latestByHostAndCategory.get(host);
+        if (!byCat) {
+          byCat = new Map();
+          latestByHostAndCategory.set(host, byCat);
+        }
+
+        const t = getRecordTime(r);
+        const prev = byCat.get(category);
+        if (!prev) {
+          byCat.set(category, r);
+        } else {
+          const pt = getRecordTime(prev);
+          if ((t && !pt) || (t && pt && t.getTime() > pt.getTime())) {
+            byCat.set(category, r);
+          }
+        }
+      }
+
+      // KPI by host: healthy if all existing categories are success
+      let healthyHosts = 0;
+      let problemHosts = 0;
+      const problemCountByCategory = { os: 0, db: 0, was: 0 };
+
+      for (const [host, byCat] of latestByHostAndCategory.entries()) {
+        let hostHealthy = true;
+        for (const [category, r] of byCat.entries()) {
+          const st = normalizeStatus(r.status);
+          if (st !== 'success') {
+            hostHealthy = false;
+            if (category in problemCountByCategory) problemCountByCategory[category] += 1;
+          }
+        }
+        if (hostHealthy) healthyHosts += 1;
+        else problemHosts += 1;
+      }
+
+      // Success ratio (by checks)
+      const successCount = results.filter(r => normalizeStatus(r.status) === 'success').length;
+      const nonSuccessCount = totalChecks - successCount;
+
+      // Type distribution
+      const typeCounts = {};
+      for (const r of results) {
+        const t = (r.check_type || 'unknown').toLowerCase();
+        typeCounts[t] = (typeCounts[t] || 0) + 1;
+      }
+
+      // Trend last 7 days (by checks)
+      const dayKeys = getLastNDaysKeys(7);
+      const dayCounts = Object.fromEntries(dayKeys.map(k => [k, 0]));
+      for (const r of results) {
+        const t = getRecordTime(r);
+        if (!t) continue;
+        const k = toKstDayKey(t);
+        if (k in dayCounts) dayCounts[k] += 1;
+      }
+
+      // Problem table: host x category rows (error -> warning -> latest)
+      const problemRows = [];
+      for (const [host, byCat] of latestByHostAndCategory.entries()) {
+        for (const [category, r] of byCat.entries()) {
+          if (normalizeStatus(r.status) === 'success') continue;
+          problemRows.push({ host, category, record: r });
+        }
+      }
+      problemRows.sort((a, b) => {
+        const sa = severityRank(a.record.status);
+        const sb = severityRank(b.record.status);
+        if (sb !== sa) return sb - sa;
+        const ta = getRecordTime(a.record)?.getTime() || 0;
+        const tb = getRecordTime(b.record)?.getTime() || 0;
+        return tb - ta;
+      });
+
+      // Recent feed: latest checks
+      const feedItems = results
+        .slice()
+        .sort((a, b) => (getRecordTime(b)?.getTime() || 0) - (getRecordTime(a)?.getTime() || 0))
+        .slice(0, 10);
+
+      return {
+        totalChecks,
+        todayChecks,
+        healthyHosts,
+        problemHosts,
+        successCount,
+        nonSuccessCount,
+        typeCounts,
+        dayKeys,
+        dayCounts,
+        problemRows: problemRows.slice(0, 12),
+        feedItems,
+        hostCount: latestByHostAndCategory.size,
+        problemCountByCategory
+      };
+    }
+
+    function renderKpis(a) {
+      document.getElementById('kpiTotalChecks').textContent = a.totalChecks.toLocaleString('ko-KR');
+      document.getElementById('kpiTodayChecks').textContent = a.todayChecks.toLocaleString('ko-KR');
+      document.getElementById('kpiHealthyHosts').textContent = a.healthyHosts.toLocaleString('ko-KR');
+      document.getElementById('kpiProblemHosts').textContent = a.problemHosts.toLocaleString('ko-KR');
+      document.getElementById('donutTotalText').textContent = `${a.totalChecks.toLocaleString('ko-KR')}건`;
+      document.getElementById('updateTime').textContent = `업데이트: ${formatDateTime(new Date())}`;
+      document.getElementById('dataSummary').textContent = `데이터: ${a.totalChecks.toLocaleString('ko-KR')}건 / ${a.hostCount.toLocaleString('ko-KR')}호스트`;
+      document.getElementById('kpiHostsSub').textContent = `호스트×유형 최신 상태 기준`;
+      if (a.problemCountByCategory) {
+        const osN = a.problemCountByCategory.os || 0;
+        const dbN = a.problemCountByCategory.db || 0;
+        const wasN = a.problemCountByCategory.was || 0;
+        document.getElementById('kpiProblemSub').textContent = `OS ${osN} · DB ${dbN} · WAS ${wasN}`;
+      }
+    }
+
+    function renderCharts(a) {
+      const common = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#cbd5e1', font: { weight: '700' } } },
+          tooltip: {
+            backgroundColor: 'rgba(2, 6, 23, 0.92)',
+            borderColor: 'rgba(148, 163, 184, 0.22)',
+            borderWidth: 1,
+            titleColor: '#e5e7eb',
+            bodyColor: '#e5e7eb'
+          }
+        }
+      };
+
+      // Donut (success ratio)
+      donutChart = destroyChart(donutChart);
+      const donutCtx = document.getElementById('donutChart').getContext('2d');
+      donutChart = new Chart(donutCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ['성공', '경고/에러'],
+          datasets: [{
+            data: [a.successCount, a.nonSuccessCount],
+            backgroundColor: ['rgba(16,185,129,0.95)', 'rgba(239,68,68,0.95)'],
+            borderColor: ['rgba(16,185,129,0.25)', 'rgba(239,68,68,0.25)'],
+            borderWidth: 2,
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          ...common,
+          cutout: '68%',
+        }
+      });
+
+      // Bar (type counts)
+      const typesOrdered = ['os','was','mariadb','postgresql','cubrid'];
+      const labels = typesOrdered.map(t => TYPE_LABEL[t] || t.toUpperCase());
+      const values = typesOrdered.map(t => a.typeCounts[t] || 0);
+
+      barChart = destroyChart(barChart);
+      const barCtx = document.getElementById('barChart').getContext('2d');
+      barChart = new Chart(barCtx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: '점검 건수',
+            data: values,
+            backgroundColor: [
+              'rgba(59,130,246,0.85)',
+              'rgba(99,102,241,0.80)',
+              'rgba(16,185,129,0.80)',
+              'rgba(245,158,11,0.80)',
+              'rgba(239,68,68,0.80)',
+            ],
+            borderColor: 'rgba(148,163,184,0.18)',
+            borderWidth: 1,
+            borderRadius: 10
+          }]
+        },
+        options: {
+          ...common,
+          scales: {
+            x: { ticks: { color: '#cbd5e1', font: { weight: '700' } }, grid: { display: false } },
+            y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.10)' } }
+          }
+        }
+      });
+
+      // Line (7 day trend)
+      const dayLabels = a.dayKeys.map(k => {
+        const [yy, mm, dd] = k.split('-');
+        return `${mm}.${dd}`;
+      });
+      const dayValues = a.dayKeys.map(k => a.dayCounts[k] || 0);
+
+      lineChart = destroyChart(lineChart);
+      const lineCtx = document.getElementById('lineChart').getContext('2d');
+      lineChart = new Chart(lineCtx, {
+        type: 'line',
+        data: {
+          labels: dayLabels,
+          datasets: [{
+            label: '점검',
+            data: dayValues,
+            borderColor: 'rgba(59,130,246,0.95)',
+            backgroundColor: 'rgba(59,130,246,0.15)',
+            pointBackgroundColor: 'rgba(59,130,246,0.95)',
+            pointBorderColor: 'rgba(2,6,23,0.9)',
+            pointRadius: 3,
+            tension: 0.35,
+            fill: true
+          }]
+        },
+        options: {
+          ...common,
+          scales: {
+            x: { ticks: { color: '#cbd5e1', font: { weight: '700' } }, grid: { display: false } },
+            y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.10)' } }
+          }
+        }
+      });
+    }
+
+    function renderProblemTable(a) {
+      const tbody = document.getElementById('problemTableBody');
+      if (!a.problemRows.length) {
+        tbody.innerHTML = `<tr><td colspan="3" style="color: var(--muted); padding: 18px 14px;">문제 서버가 없습니다. (호스트×유형 최신 상태 기준)</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = a.problemRows.map(row => {
+        const type = CATEGORY_LABEL[row.category] || String(row.category || 'N/A').toUpperCase();
+        const host = row.host || 'N/A';
+        const badge = statusBadgeHtml(row.record && row.record.status);
+        const rid = String((row.record && row.record.id) ?? '');
+        return `
+          <tr class="clickable" data-id="${rid}">
+            <td>${escapeHtml(host)}</td>
+            <td>${escapeHtml(type)}</td>
+            <td>${badge}</td>
+          </tr>
+        `;
+      }).join('');
+
+      tbody.querySelectorAll('tr.clickable').forEach(tr => {
+        tr.addEventListener('click', async () => {
+          const id = tr.getAttribute('data-id');
+          if (!id) return;
+          await openDetailsById(id);
+        });
+      });
+    }
+
+    function renderFeed(a) {
+      const el = document.getElementById('feedList');
+      if (!a.feedItems.length) {
+        el.innerHTML = `<div class="feed-item" style="color: var(--muted);">표시할 데이터가 없습니다.</div>`;
+        return;
+      }
+
+      el.innerHTML = a.feedItems.map(r => {
+        const host = r.hostname || 'N/A';
+        const category = categoryForCheckType(r.check_type);
+        const type = CATEGORY_LABEL[category] || (TYPE_LABEL[(r.check_type || '').toLowerCase()] || String(r.check_type || 'N/A').toUpperCase());
+        const t = getRecordTime(r);
+        const timeText = t ? formatDateTime(t) : 'N/A';
+        const badge = statusBadgeHtml(r.status);
+        const rid = String(r.id ?? '');
+        return `
+          <div class="feed-item" data-id="${rid}">
+            <div class="feed-left">
+              <div class="feed-server">${escapeHtml(host)}</div>
+              <div class="feed-meta">
+                <span class="feed-type">${escapeHtml(type)}</span>
+                <span>${escapeHtml(timeText)}</span>
+              </div>
+            </div>
+            <div>${badge}</div>
+          </div>
+        `;
+      }).join('');
+
+      el.querySelectorAll('.feed-item').forEach(item => {
+        item.addEventListener('click', async () => {
+          const id = item.getAttribute('data-id');
+          if (!id) return;
+          await openDetailsById(id);
+        });
+      });
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    async function openDetailsById(id) {
+      try {
+        const res = await fetch(`/api/checks?id=${encodeURIComponent(id)}&t=${Date.now()}`);
+        const data = await res.json();
+        if (data && data.success && Array.isArray(data.results) && data.results.length) {
+          const r = data.results[0];
+          const category = categoryForCheckType(r.check_type);
+          const typeTitle = CATEGORY_LABEL[category] || (TYPE_LABEL[(r.check_type || '').toLowerCase()] || String(r.check_type || 'N/A')).toUpperCase();
+          const title = `${typeTitle} / ${r.hostname || 'N/A'} / ${r.status || 'N/A'}`;
+          const summaryHtml = await buildHostSummaryHtml(r.hostname);
+          openModal(title, r, summaryHtml);
+        } else {
+          openModal('상세 정보', data, '');
+        }
+      } catch (e) {
+        openModal('상세 정보(오류)', { error: String(e) }, '');
+      }
+    }
+
+    async function buildHostSummaryHtml(hostname) {
+      if (!hostname) return '';
+      try {
+        const res = await fetch(`/api/checks?hostname=${encodeURIComponent(hostname)}&limit=2000&t=${Date.now()}`);
+        const data = await res.json();
+        if (!data || !data.success || !Array.isArray(data.results)) return '';
+
+        const latest = { os: null, db: null, was: null };
+        for (const r of data.results) {
+          const cat = categoryForCheckType(r.check_type);
+          if (!(cat in latest)) continue;
+          const t = getRecordTime(r);
+          const prev = latest[cat];
+          if (!prev) {
+            latest[cat] = r;
+          } else {
+            const pt = getRecordTime(prev);
+            if ((t && !pt) || (t && pt && t.getTime() > pt.getTime())) {
+              latest[cat] = r;
+            }
+          }
+        }
+
+        const cells = ['os', 'db', 'was'].map(cat => {
+          const r = latest[cat];
+          const badge = r ? statusBadgeHtml(r.status) : '<span class="status-badge badge-unknown">없음</span>';
+          const timeText = r ? (getRecordTime(r) ? formatDateTime(getRecordTime(r)) : 'N/A') : 'N/A';
+          const engineText = (cat === 'db' && r && r.check_type) ? String(r.check_type).toUpperCase() : '';
+          const meta = engineText ? `${engineText} · ${timeText}` : timeText;
+          return `
+            <div class="summary-item">
+              <div class="label">${CATEGORY_LABEL[cat]}</div>
+              <div>${badge}</div>
+              <div class="meta">${escapeHtml(meta)}</div>
+            </div>
+          `;
+        }).join('');
+
+        return `<div class="summary-grid">${cells}</div>`;
+      } catch {
+        return '';
+      }
+    }
+
+    async function reloadDashboard() {
+      try {
+        // Loading state
+        document.getElementById('dataSummary').textContent = '데이터: 로딩 중...';
+        document.getElementById('problemTableBody').innerHTML = `
+          <tr><td colspan="3" style="padding: 14px 14px;"><div class="skeleton" style="height: 14px; width: 78%;"></div></td></tr>
+          <tr><td colspan="3" style="padding: 14px 14px;"><div class="skeleton" style="height: 14px; width: 92%;"></div></td></tr>
+          <tr><td colspan="3" style="padding: 14px 14px;"><div class="skeleton" style="height: 14px; width: 66%;"></div></td></tr>
+        `;
+        document.getElementById('feedList').innerHTML = `
+          <div class="feed-item"><div class="skeleton" style="height: 14px; width: 70%;"></div></div>
+          <div class="feed-item"><div class="skeleton" style="height: 14px; width: 88%;"></div></div>
+          <div class="feed-item"><div class="skeleton" style="height: 14px; width: 62%;"></div></div>
+        `;
+
+        const results = await fetchChecks(2000);
+        const filtered = applyDashboardFilters(results);
+        const a = aggregate(filtered);
+        renderKpis(a);
+        renderCharts(a);
+        renderProblemTable(a);
+        renderFeed(a);
+      } catch (e) {
+        document.getElementById('dataSummary').textContent = '데이터: 로드 실패';
+        document.getElementById('problemTableBody').innerHTML =
+          `<tr><td colspan="3" style="color: var(--muted); padding: 18px 14px;">데이터 로드 실패: ${escapeHtml(e.message || String(e))}</td></tr>`;
+        document.getElementById('feedList').innerHTML =
+          `<div class="feed-item" style="color: var(--muted);">데이터 로드 실패</div>`;
+        showToast('데이터 로드 실패', e && e.message ? e.message : String(e));
+      }
+    }
+
+    function connectWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        try {
+          const dot = document.getElementById('wsDot');
+          const text = document.getElementById('wsStatusText');
+          if (dot) dot.style.background = 'var(--green)';
+          if (text) text.textContent = '실시간 연결';
+        } catch {}
+        // keep-alive ping
+        setInterval(() => {
+          if (ws && ws.readyState === WebSocket.OPEN) ws.send('ping');
+        }, 30000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'new_check_result') {
+            if (filterState.autoRefresh) reloadDashboard();
+          }
+        } catch {}
+      };
+
+      ws.onclose = () => {
+        try {
+          const dot = document.getElementById('wsDot');
+          const text = document.getElementById('wsStatusText');
+          if (dot) dot.style.background = 'var(--red)';
+          if (text) text.textContent = '연결 끊김';
+        } catch {}
+        setTimeout(connectWebSocket, 5000);
+      };
+    }
+
+    const THEME_KEY = 'reportTheme';
+    function getTheme() { return localStorage.getItem(THEME_KEY) || 'dark'; }
+    function setTheme(theme) {
+      theme = theme === 'light' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem(THEME_KEY, theme);
+      const d = document.getElementById('themeDark');
+      const l = document.getElementById('themeLight');
+      if (d) d.classList.toggle('active', theme === 'dark');
+      if (l) l.classList.toggle('active', theme === 'light');
+    }
+    function initTheme() {
+      setTheme(getTheme());
+      const d = document.getElementById('themeDark');
+      const l = document.getElementById('themeLight');
+      if (d) d.addEventListener('click', () => setTheme('dark'));
+      if (l) l.addEventListener('click', () => setTheme('light'));
+    }
+
+    // initial
+    initTheme();
+    syncFilterUiFromState();
+    attachFilterHandlers();
+    reloadDashboard();
+    connectWebSocket();
+  </script>
+</body>
+</html>
+
