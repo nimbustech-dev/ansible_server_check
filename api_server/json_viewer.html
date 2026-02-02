@@ -116,6 +116,10 @@
         button:hover {
             filter: brightness(1.05);
         }
+        button:focus-visible, .btn-theme:focus-visible {
+            outline: 2px solid var(--blue);
+            outline-offset: 2px;
+        }
         
         button:active {
             transform: scale(0.98);
@@ -402,8 +406,15 @@
         
         function copyToClipboard() {
             const jsonOutput = document.getElementById('jsonOutput');
-            const text = jsonOutput.textContent;
-            
+            if (!jsonOutput || jsonOutput.style.display === 'none') {
+                alert('먼저 "데이터 불러오기" 버튼으로 데이터를 불러온 뒤 복사할 수 있습니다.');
+                return;
+            }
+            const text = jsonOutput.textContent || '';
+            if (!text.trim()) {
+                alert('표시할 데이터가 없습니다. 먼저 데이터를 불러오세요.');
+                return;
+            }
             navigator.clipboard.writeText(text).then(() => {
                 alert('JSON 데이터가 클립보드에 복사되었습니다!');
             }).catch(err => {

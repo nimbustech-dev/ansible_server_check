@@ -143,6 +143,10 @@
       background: rgba(255,255,255,0.07);
       border-color: rgba(148,163,184,0.28);
     }
+    .btn:focus-visible, .btn-theme:focus-visible{
+      outline: 2px solid var(--blue);
+      outline-offset: 2px;
+    }
 
     .btn-primary{
       background: linear-gradient(135deg, rgba(59,130,246,0.90), rgba(37,99,235,0.90));
@@ -188,6 +192,9 @@
     }
 
     .card > * { position: relative; z-index: 1; }
+    .card-clickable { cursor: pointer; text-decoration: none; color: inherit; display: block; transition: transform .15s ease, box-shadow .15s ease; }
+    .card-clickable:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(0,0,0,0.35); }
+    .kpi-section .card-clickable:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
     .card-header{
       display: flex;
@@ -702,6 +709,7 @@
         <h1>서버 점검 모니터링 대시보드</h1>
         <div class="subline">
           <span class="pill"><span class="dot" id="wsDot"></span> <span id="wsStatusText">실시간 연결</span></span>
+          <span class="pill"><span class="dot" id="dbDot"></span> <span id="dbStatusText">DB: 확인 중</span></span>
           <span class="pill" id="updateTime">업데이트: -</span>
           <span class="pill" id="dataSummary">데이터: -</span>
         </div>
@@ -716,30 +724,31 @@
         <a class="btn btn-primary" href="/api/os-checks/report" target="_blank" rel="noreferrer">OS 리포트</a>
         <a class="btn btn-primary" href="/api/was-checks/report" target="_blank" rel="noreferrer">WAS 리포트</a>
         <a class="btn" href="/api/report-legacy" target="_blank" rel="noreferrer">통합(기존)</a>
+        <a class="btn" href="/api/json-viewer" target="_blank" rel="noreferrer">JSON 뷰어</a>
       </div>
     </div>
 
     <!-- KPI -->
     <div class="kpi-section">
-      <div class="card">
+      <div class="card card-clickable" role="button" tabindex="0" id="kpiTotalCard" aria-label="전체 점검 건수: 상세 보기">
         <div class="card-header"><div class="badge-icon bg-blue">A</div> 전체 점검 건수</div>
         <div class="card-value" id="kpiTotalChecks">-</div>
         <div class="card-sub" id="kpiTotalChecksSub">최근 데이터 기준</div>
         <div class="neon-bar text-blue"></div>
       </div>
-      <div class="card">
+      <div class="card card-clickable" role="button" tabindex="0" id="kpiTodayCard" aria-label="오늘 점검 건수: 오늘 기준으로 보기">
         <div class="card-header"><div class="badge-icon bg-amber">T</div> 오늘 점검 건수</div>
         <div class="card-value" id="kpiTodayChecks">-</div>
         <div class="card-sub" id="kpiTodayChecksSub">로컬 시간 기준</div>
         <div class="neon-bar text-amber"></div>
       </div>
-      <div class="card">
+      <div class="card card-clickable" role="button" tabindex="0" id="kpiHealthyCard" aria-label="정상 서버: 상세 보기">
         <div class="card-header"><div class="badge-icon bg-green">S</div> 정상 서버</div>
         <div class="card-value" id="kpiHealthyHosts">-</div>
         <div class="card-sub" id="kpiHostsSub">호스트별 최신 상태</div>
         <div class="neon-bar text-green"></div>
       </div>
-      <div class="card">
+      <div class="card card-clickable" role="button" tabindex="0" id="kpiProblemCard" aria-label="경고/에러 서버: 문제 서버 목록">
         <div class="card-header"><div class="badge-icon bg-red">E</div> 경고/에러 서버</div>
         <div class="card-value" id="kpiProblemHosts">-</div>
         <div class="card-sub" id="kpiProblemSub">호스트별 최신 상태</div>
@@ -794,6 +803,13 @@
       </div>
     </div>
 
+    <!-- Empty state hint (shown when 0 data) -->
+    <div class="filter-card" id="emptyStateBanner" style="display: none;">
+      <div class="section-title" id="emptyStateTitle" style="margin-bottom: 8px;"></div>
+      <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 12px;" id="emptyStateMessage"></p>
+      <button type="button" class="btn" id="emptyStateBtnAll" style="display: none;" onclick="setFilterRangeAllAndReload()">기간: 전체로 보기</button>
+    </div>
+
     <!-- Main content -->
     <div class="main-content">
       <div class="left-panel">
@@ -813,7 +829,7 @@
           </div>
         </div>
 
-        <div class="table-card">
+        <div class="table-card" id="problemTableSection">
           <div class="section-title">문제 서버 목록 (Priority)</div>
           <table>
             <thead>
@@ -838,7 +854,7 @@
           </div>
         </div>
 
-        <div class="feed-card">
+        <div class="feed-card" id="feedSection">
           <div class="section-title" style="margin-bottom: 10px;">최근 점검 피드</div>
           <div class="feed-list" id="feedList">
             <div class="feed-item" style="color: var(--muted);">데이터를 불러오는 중...</div>
@@ -860,6 +876,20 @@
       <div class="modal-body">
         <div id="modalSummary"></div>
         <pre id="modalPre">-</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI List Modal -->
+  <div class="modal-overlay" id="kpiListModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="kpiListModalTitle">목록</h3>
+        <button class="modal-close" onclick="closeKpiModal()">닫기</button>
+      </div>
+      <div class="modal-body">
+        <div class="section-title" id="kpiListModalSub" style="margin-bottom: 10px;"></div>
+        <div id="kpiListModalBody"></div>
       </div>
     </div>
   </div>
@@ -957,6 +987,114 @@
     document.getElementById('detailModal').addEventListener('click', (e) => {
       if (e.target && e.target.id === 'detailModal') closeModal();
     });
+
+    function closeKpiModal() {
+      document.getElementById('kpiListModal').classList.remove('active');
+    }
+
+    document.getElementById('kpiListModal').addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'kpiListModal') closeKpiModal();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (document.getElementById('kpiListModal').classList.contains('active')) {
+        closeKpiModal();
+        e.preventDefault();
+      } else if (document.getElementById('detailModal').classList.contains('active')) {
+        closeModal();
+        e.preventDefault();
+      }
+    });
+
+    const KPI_MODAL_TITLES = { all: '전체 점검 건수', today: '오늘 점검 건수', healthy: '정상 서버', problem: '경고/에러 서버' };
+
+    function buildKpiModalBodyAll(rows) {
+      if (!rows || !rows.length) return '<p style="color: var(--muted); padding: 14px 0;">표시할 데이터가 없습니다.</p>';
+      const sorted = rows.slice().sort((a, b) => (getRecordTime(b)?.getTime() || 0) - (getRecordTime(a)?.getTime() || 0));
+      const html = sorted.map(r => {
+        const host = escapeHtml(r.hostname || 'N/A');
+        const type = escapeHtml((TYPE_LABEL[(r.check_type || '').toLowerCase()] || String(r.check_type || 'N/A').toUpperCase()));
+        const timeStr = formatDateTime(getRecordTime(r));
+        const checker = escapeHtml(r.checker || 'N/A');
+        const badge = statusBadgeHtml(r.status);
+        const id = (r.id != null) ? String(r.id) : '';
+        return `<tr class="clickable" data-id="${escapeHtml(id)}"><td>${host}</td><td>${type}</td><td>${timeStr}</td><td>${checker}</td><td>${badge}</td></tr>`;
+      }).join('');
+      return `<table><thead><tr><th>서버명</th><th>점검 유형</th><th>점검시간</th><th>담당자</th><th>상태</th></tr></thead><tbody>${html}</tbody></table>`;
+    }
+
+    function buildKpiModalBodyHealthy(names) {
+      if (!names || !names.length) return '<p style="color: var(--muted); padding: 14px 0;">표시할 데이터가 없습니다.</p>';
+      const rows = names.map(h => `<tr><td>${escapeHtml(h)}</td><td><span class="status-badge badge-normal">정상</span></td></tr>`).join('');
+      return `<table><thead><tr><th>서버명</th><th>상태</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function buildKpiModalBodyProblem(problemRows) {
+      if (!problemRows || !problemRows.length) return '<p style="color: var(--muted); padding: 14px 0;">표시할 데이터가 없습니다.</p>';
+      const html = problemRows.map(row => {
+        const type = CATEGORY_LABEL[row.category] || String(row.category || 'N/A').toUpperCase();
+        const host = escapeHtml(row.host || 'N/A');
+        const badge = statusBadgeHtml(row.record && row.record.status);
+        const rid = String((row.record && row.record.id) ?? '');
+        return `<tr class="clickable" data-id="${escapeHtml(rid)}"><td>${host}</td><td>${escapeHtml(type)}</td><td>${badge}</td></tr>`;
+      }).join('');
+      return `<table><thead><tr><th>서버명</th><th>점검 유형</th><th>상태</th></tr></thead><tbody>${html}</tbody></table>`;
+    }
+
+    function openKpiModal(type) {
+      const titles = KPI_MODAL_TITLES;
+      const titleEl = document.getElementById('kpiListModalTitle');
+      const subEl = document.getElementById('kpiListModalSub');
+      const bodyEl = document.getElementById('kpiListModalBody');
+      titleEl.textContent = titles[type] || '목록';
+
+      const filtered = window.lastFilteredResults;
+      const agg = window.lastAggregate;
+
+      const noDataHtml = '<p style="color: var(--muted); padding: 14px 0;">데이터가 없습니다. 새로고침 후 다시 시도해 주세요.</p><button class="btn" onclick="reloadDashboard(); closeKpiModal();">새로고침</button>';
+      if (!filtered && type !== 'healthy' && type !== 'problem') {
+        subEl.textContent = '';
+        bodyEl.innerHTML = noDataHtml;
+        document.getElementById('kpiListModal').classList.add('active');
+        return;
+      }
+      if (!agg && (type === 'healthy' || type === 'problem')) {
+        subEl.textContent = '';
+        bodyEl.innerHTML = noDataHtml;
+        document.getElementById('kpiListModal').classList.add('active');
+        return;
+      }
+
+      if (type === 'all') {
+        subEl.textContent = '총 ' + (filtered ? filtered.length : 0).toLocaleString('ko-KR') + '건';
+        bodyEl.innerHTML = buildKpiModalBodyAll(filtered || []);
+      } else if (type === 'today') {
+        const todayRows = (filtered || []).filter(r => {
+          const t = getRecordTime(r);
+          return t && isTodayKst(t);
+        });
+        subEl.textContent = '총 ' + todayRows.length.toLocaleString('ko-KR') + '건 (오늘 KST 기준)';
+        bodyEl.innerHTML = buildKpiModalBodyAll(todayRows);
+      } else if (type === 'healthy') {
+        const names = (agg && agg.healthyHostNames) ? agg.healthyHostNames : [];
+        subEl.textContent = '총 ' + names.length.toLocaleString('ko-KR') + '대';
+        bodyEl.innerHTML = buildKpiModalBodyHealthy(names);
+      } else {
+        const problemRows = (agg && agg.problemRows) ? agg.problemRows : [];
+        subEl.textContent = '총 ' + problemRows.length.toLocaleString('ko-KR') + '건';
+        bodyEl.innerHTML = buildKpiModalBodyProblem(problemRows);
+      }
+
+      bodyEl.querySelectorAll('tr.clickable').forEach(tr => {
+        tr.addEventListener('click', async () => {
+          const id = tr.getAttribute('data-id');
+          if (id) await openDetailsById(id);
+        });
+      });
+
+      document.getElementById('kpiListModal').classList.add('active');
+    }
 
     async function fetchChecks(limit = 2000) {
       const url = `/api/checks?limit=${encodeURIComponent(limit)}&t=${Date.now()}`;
@@ -1200,6 +1338,7 @@
       // KPI by host: healthy if all existing categories are success
       let healthyHosts = 0;
       let problemHosts = 0;
+      const healthyHostNames = [];
       const problemCountByCategory = { os: 0, db: 0, was: 0 };
 
       for (const [host, byCat] of latestByHostAndCategory.entries()) {
@@ -1211,8 +1350,12 @@
             if (category in problemCountByCategory) problemCountByCategory[category] += 1;
           }
         }
-        if (hostHealthy) healthyHosts += 1;
-        else problemHosts += 1;
+        if (hostHealthy) {
+          healthyHosts += 1;
+          healthyHostNames.push(host);
+        } else {
+          problemHosts += 1;
+        }
       }
 
       // Success ratio (by checks)
@@ -1264,6 +1407,7 @@
         todayChecks,
         healthyHosts,
         problemHosts,
+        healthyHostNames,
         successCount,
         nonSuccessCount,
         typeCounts,
@@ -1291,6 +1435,30 @@
         const wasN = a.problemCountByCategory.was || 0;
         document.getElementById('kpiProblemSub').textContent = `OS ${osN} · DB ${dbN} · WAS ${wasN}`;
       }
+
+      var banner = document.getElementById('emptyStateBanner');
+      var rawCount = typeof window.lastRawCount === 'number' ? window.lastRawCount : 0;
+      if (a.totalChecks === 0 && banner) {
+        banner.style.display = '';
+        if (rawCount === 0) {
+          document.getElementById('emptyStateTitle').textContent = 'DB에는 연결됐지만 저장된 점검 결과가 없습니다';
+          document.getElementById('emptyStateMessage').textContent = 'Ansible 점검 플레이북(OS/DB/WAS)을 실행해 API 서버(POST /api/checks)로 결과가 전송되면 여기에 표시됩니다. 점검이 끝난 뒤 새로고침해 주세요.';
+          document.getElementById('emptyStateBtnAll').style.display = 'none';
+        } else {
+          document.getElementById('emptyStateTitle').textContent = '선택한 필터에 맞는 데이터가 없습니다';
+          document.getElementById('emptyStateMessage').textContent = '기간이 "오늘"·"7일" 등으로 좁혀져 있으면 표시할 수 없습니다. 기간을 "전체"로 바꿔 보세요.';
+          document.getElementById('emptyStateBtnAll').style.display = 'inline-flex';
+        }
+      } else if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+
+    function setFilterRangeAllAndReload() {
+      filterState.range = 'all';
+      syncFilterUiFromState();
+      saveFilterState(filterState);
+      reloadDashboard();
     }
 
     function renderCharts(a) {
@@ -1556,19 +1724,53 @@
         `;
 
         const results = await fetchChecks(2000);
+        window.lastRawCount = (results && results.length) || 0;
         const filtered = applyDashboardFilters(results);
         const a = aggregate(filtered);
+        window.lastFilteredResults = filtered;
+        window.lastAggregate = a;
         renderKpis(a);
         renderCharts(a);
         renderProblemTable(a);
         renderFeed(a);
       } catch (e) {
         document.getElementById('dataSummary').textContent = '데이터: 로드 실패';
-        document.getElementById('problemTableBody').innerHTML =
-          `<tr><td colspan="3" style="color: var(--muted); padding: 18px 14px;">데이터 로드 실패: ${escapeHtml(e.message || String(e))}</td></tr>`;
+        var errMsg = e && (e.message || String(e)) || '데이터 로드 실패';
+        var isDbError = /connection|연결|refused|timeout|ECONNREFUSED|could not connect|데이터베이스/i.test(errMsg);
+        var tableHtml = `<tr><td colspan="3" style="color: var(--muted); padding: 18px 14px;">데이터 로드 실패: ${escapeHtml(errMsg)}</td></tr>`;
+        if (isDbError) {
+          tableHtml += `<tr><td colspan="3" style="color: var(--amber); padding: 12px 14px;">데이터베이스 서버가 꺼져 있거나 연결할 수 없습니다. PostgreSQL 등 DB 서버를 켠 뒤 새로고침해 주세요.</td></tr>`;
+        }
+        document.getElementById('problemTableBody').innerHTML = tableHtml;
         document.getElementById('feedList').innerHTML =
           `<div class="feed-item" style="color: var(--muted);">데이터 로드 실패</div>`;
-        showToast('데이터 로드 실패', e && e.message ? e.message : String(e));
+        showToast('데이터 로드 실패', isDbError ? 'DB 서버가 꺼져 있을 수 있습니다. DB를 확인한 뒤 새로고침해 주세요.' : errMsg);
+        checkDbStatus();
+      }
+      checkDbStatus();
+    }
+
+    async function checkDbStatus() {
+      try {
+        var res = await fetch('/api/health?t=' + Date.now());
+        var data = await res.json();
+        var dot = document.getElementById('dbDot');
+        var text = document.getElementById('dbStatusText');
+        if (!dot || !text) return;
+        if (data && data.db === 'ok') {
+          dot.style.background = 'var(--green)';
+          dot.classList.remove('disconnected');
+          text.textContent = 'DB: 연결됨';
+        } else {
+          dot.style.background = 'var(--red)';
+          dot.classList.add('disconnected');
+          text.textContent = 'DB: 끊김';
+        }
+      } catch (_) {
+        var dot = document.getElementById('dbDot');
+        var text = document.getElementById('dbStatusText');
+        if (dot) { dot.style.background = 'var(--red)'; dot.classList.add('disconnected'); }
+        if (text) text.textContent = 'DB: 확인 실패';
       }
     }
 
@@ -1629,10 +1831,29 @@
       if (l) l.addEventListener('click', () => setTheme('light'));
     }
 
+    function initKpiCards() {
+      function addKpiCardHandlers(el, type) {
+        if (!el) return;
+        el.addEventListener('click', (e) => { e.preventDefault(); openKpiModal(type); });
+        el.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openKpiModal(type);
+          }
+        });
+      }
+      addKpiCardHandlers(document.getElementById('kpiTotalCard'), 'all');
+      addKpiCardHandlers(document.getElementById('kpiTodayCard'), 'today');
+      addKpiCardHandlers(document.getElementById('kpiHealthyCard'), 'healthy');
+      addKpiCardHandlers(document.getElementById('kpiProblemCard'), 'problem');
+    }
+
     // initial
     initTheme();
+    initKpiCards();
     syncFilterUiFromState();
     attachFilterHandlers();
+    checkDbStatus();
     reloadDashboard();
     connectWebSocket();
   </script>

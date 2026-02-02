@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from models import Base, CheckResult
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 # .env 파일에서 환경변수 로드 (있는 경우)
 env_file = Path(__file__).parent / ".env"
@@ -53,6 +53,24 @@ def init_db():
     """데이터베이스 초기화 (테이블 생성)"""
     Base.metadata.create_all(bind=engine)
     print(f"📊 데이터베이스 연결: {DATABASE_URL}")
+
+
+def check_db_connection() -> Tuple[bool, str]:
+    """
+    DB 연결 가능 여부 확인
+    
+    Returns:
+        (성공 여부, 메시지)
+    """
+    try:
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+            return True, "ok"
+        finally:
+            db.close()
+    except Exception as e:
+        return False, str(e)
 
 
 def get_db() -> Session:

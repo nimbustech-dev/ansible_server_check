@@ -81,10 +81,14 @@ async def root():
 
 @app.get("/api/health")
 async def health_check():
-    """서버 상태 확인"""
+    """서버 상태 확인 (DB 연결 포함)"""
+    from database import check_db_connection
+    db_ok, db_message = check_db_connection()
     return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat()
+        "status": "healthy" if db_ok else "degraded",
+        "timestamp": datetime.now().isoformat(),
+        "db": "ok" if db_ok else "error",
+        "db_message": db_message if not db_ok else None,
     }
 
 
