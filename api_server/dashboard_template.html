@@ -743,6 +743,7 @@
         </div>
       </div>
       <div class="actions">
+        <span id="authUserBar" class="pill" style="margin-right:8px;"></span>
         <span class="theme-toggle" role="group" aria-label="테마 선택">
           <button type="button" class="btn btn-theme" id="themeDark" title="다크 모드">다크</button>
           <button type="button" class="btn btn-theme" id="themeLight" title="라이트 모드">라이트</button>
@@ -927,6 +928,21 @@
     let barChart = null;
     let lineChart = null;
     let ws = null;
+
+    async function loadAuthUser() {
+      const bar = document.getElementById('authUserBar');
+      if (!bar) return;
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' });
+        if (!res.ok) { bar.textContent = ''; return; }
+        const user = await res.json();
+        bar.innerHTML = (user.username || '') + ' | <a href="#" onclick="doLogout(); return false;">로그아웃</a>' + (user.is_admin ? ' | <a href="/api/admin">회원 승인</a>' : '');
+      } catch (e) { bar.textContent = ''; }
+    }
+    async function doLogout() {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      window.location.href = '/login';
+    }
 
     const TYPE_LABEL = {
       os: 'OS',
@@ -1877,6 +1893,7 @@
     }
 
     // initial
+    loadAuthUser();
     initTheme();
     initKpiCards();
     syncFilterUiFromState();

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>회원 승인 - 서버 점검 모니터링</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Noto Sans KR', system-ui, sans-serif; }
+    :root {
+      --bg: #0b1020;
+      --bg-2: #070b15;
+      --panel: rgba(17, 24, 39, 0.78);
+      --border: rgba(148, 163, 184, 0.16);
+      --text: #e5e7eb;
+      --muted: #9aa6b2;
+      --blue: #3b82f6;
+      --green: #10b981;
+      --red: #ef4444;
+      --amber: #f59e0b;
+      --radius: 14px;
+    }
+    body {
+      background: linear-gradient(180deg, var(--bg), var(--bg-2));
+      color: var(--text);
+      min-height: 100vh;
+      padding: 22px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px;
+      border-radius: var(--radius);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .topbar h1 { font-size: 1.2rem; }
+    .topbar a { color: var(--blue); font-size: 0.9rem; }
+    .card {
+      padding: 24px;
+      border-radius: var(--radius);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; font-size: 0.9rem; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; }
+    .badge.pending { background: rgba(245,158,11,0.2); color: var(--amber); }
+    .badge.approved { background: rgba(16,185,129,0.2); color: var(--green); }
+    .badge.admin { background: rgba(59,130,246,0.2); color: var(--blue); }
+    .btn {
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.9rem;
+      cursor: pointer;
+      margin-right: 8px;
+    }
+    .btn-approve { background: var(--green); color: #fff; }
+    .btn-reject { background: var(--red); color: #fff; }
+    .btn:hover { filter: brightness(1.1); }
+    .msg { padding: 10px; border-radius: 8px; margin-bottom: 16px; display: none; }
+    .msg.show { display: block; }
+    .msg.error { background: rgba(239,68,68,0.15); color: #fca5a5; }
+    .msg.success { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+    .empty { color: var(--muted); padding: 24px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>회원 승인 관리</h1>
+    <a href="/api/dashboard">대시보드로 돌아가기</a>
+  </div>
+  <div id="msg" class="msg"></div>
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>아이디</th>
+          <th>이메일</th>
+          <th>상태</th>
+          <th>가입일</th>
+          <th>동작</th>
+        </tr>
+      </thead>
+      <tbody id="userList">
+        <tr><td colspan="5" class="empty">불러오는 중...</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <script>
+    function showMsg(text, type) {
+      const el = document.getElementById('msg');
+      el.textContent = text;
+      el.className = 'msg show ' + (type || 'success');
+    }
+    async function loadUsers() {
+      const tbody = document.getElementById('userList');
+      try {
+        const res = await fetch('/api/admin/users', { credentials: 'include' });
+        if (!res.ok) { tbody.innerHTML = '<tr><td colspan="5" class="empty">목록을 불러올 수 없습니다.</td></tr>'; return; }
+        const data = await res.json();
+        const users = data.users || [];
+        if (users.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="empty">가입된 사용자가 없습니다.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = users.map(u => {
+          const status = u.is_admin ? '<span class="badge admin">관리자</span>' : (u.is_approved ? '<span class="badge approved">승인</span>' : '<span class="badge pending">대기</span>');
+          const created = u.created_at ? new Date(u.created_at).toLocaleString('ko-KR') : '-';
+          const actions = !u.is_admin
+            ? (u.is_approved
+              ? '<button class="btn btn-reject" onclick="reject(' + u.id + ')">승인 취소</button>'
+              : '<button class="btn btn-approve" onclick="approve(' + u.id + ')">승인</button> <button class="btn btn-reject" onclick="reject(' + u.id + ')">거부</button>')
+            : '-';
+          return '<tr><td>' + (u.username || '') + '</td><td>' + (u.email || '-') + '</td><td>' + status + '</td><td>' + created + '</td><td>' + actions + '</td></tr>';
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">오류가 발생했습니다.</td></tr>';
+      }
+    }
+    async function approve(id) {
+      try {
+        const res = await fetch('/api/admin/users/' + id + '/approve', { method: 'POST', credentials: 'include' });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) { showMsg('승인되었습니다.'); loadUsers(); }
+        else showMsg(data.detail || '실패', 'error');
+      } catch (e) { showMsg('오류가 발생했습니다.', 'error'); }
+    }
+    async function reject(id) {
+      try {
+        const res = await fetch('/api/admin/users/' + id + '/reject', { method: 'POST', credentials: 'include' });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) { showMsg('거부 처리되었습니다.'); loadUsers(); }
+        else showMsg(data.detail || '실패', 'error');
+      } catch (e) { showMsg('오류가 발생했습니다.', 'error'); }
+    }
+    loadUsers();
+  </script>
+</body>
+</html>

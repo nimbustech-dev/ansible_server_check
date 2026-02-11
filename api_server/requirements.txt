@@ -8,6 +8,10 @@ requests==2.31.0
 # PostgreSQL 사용 시 추가
 psycopg2-binary==2.9.9
 
+# 인증 (로그인/회원가입/관리자 승인)
+bcrypt>=4.0,<6
+python-jose[cryptography]==3.3.0
+
 # MariaDB/MySQL 사용 시 추가
 # pymysql==1.1.0
 # cryptography==41.0.7

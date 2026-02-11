@@ -1,12 +1,35 @@
 """
 데이터베이스 모델 정의
 """
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 
 Base = declarative_base()
+
+
+class User(Base):
+    """사용자 테이블 (로그인/회원가입/관리자 승인)"""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    email = Column(String(255), unique=True, nullable=True, index=True)
+    password_hash = Column(String(255), nullable=False)
+    is_approved = Column(Boolean, default=False, nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    def to_dict(self):
+        """딕셔너리로 변환 (비밀번호 제외)"""
+        return {
+            "id": self.id,
+            "username": self.username,
+            "email": self.email or None,
+            "is_approved": self.is_approved,
+            "is_admin": self.is_admin,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class CheckResult(Base):

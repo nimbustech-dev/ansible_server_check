@@ -5,8 +5,27 @@ import os
 from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
-from models import Base, CheckResult
+from models import Base, CheckResult, User
 from typing import Optional, List, Dict, Any, Tuple
+
+# 비밀번호 해시 (bcrypt 직접 사용 - passlib와 bcrypt 5.x 호환 이슈 회피)
+def hash_password(password: str) -> str:
+    import bcrypt
+    raw = password.encode("utf-8")
+    if len(raw) > 72:
+        raw = raw[:72]
+    return bcrypt.hashpw(raw, bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    import bcrypt
+    raw = plain.encode("utf-8")
+    if len(raw) > 72:
+        raw = raw[:72]
+    try:
+        return bcrypt.checkpw(raw, hashed.encode("utf-8"))
+    except Exception:
+        return False
 
 # .env 파일에서 환경변수 로드 (있는 경우)
 env_file = Path(__file__).parent / ".env"
@@ -173,6 +192,121 @@ def get_check_results(
                 raise e2
         else:
             raise e
+    finally:
+        db.close()
+
+
+# ---------- User CRUD ----------
+
+
+def get_user_by_username(username: str) -> Optional[User]:
+    """username으로 사용자 조회"""
+    db = SessionLocal()
+    try:
+        return db.query(User).filter(User.username == username).first()
+    finally:
+        db.close()
+
+
+def get_user_by_id(user_id: int) -> Optional[User]:
+    """id로 사용자 조회"""
+    db = SessionLocal()
+    try:
+        return db.query(User).filter(User.id == user_id).first()
+    finally:
+        db.close()
+
+
+def create_user(username: str, password: str, email: Optional[str] = None) -> User:
+    """회원가입: 사용자 생성. 비밀번호는 해시 후 저장."""
+    db = SessionLocal()
+    try:
+        user = User(
+            username=username,
+            email=email or None,
+            password_hash=hash_password(password),
+            is_approved=False,
+            is_admin=False,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def get_all_users() -> List[User]:
+    """가입자 목록 (승인 대기 포함) - 관리자용"""
+    db = SessionLocal()
+    try:
+        return db.query(User).order_by(User.created_at.desc()).all()
+    finally:
+        db.close()
+
+
+def set_user_approved(user_id: int, approved: bool) -> Optional[User]:
+    """사용자 승인/거부 설정"""
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return None
+        user.is_approved = approved
+        db.commit()
+        db.refresh(user)
+        return user
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def delete_user(user_id: int) -> bool:
+    """사용자 삭제 (거부 시 선택적으로 사용)"""
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return False
+        db.delete(user)
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def ensure_admin_user():
+    """서버 기동 시 .env의 ADMIN_USERNAME, ADMIN_PASSWORD로 최초 관리자 생성 (없을 때만)"""
+    username = os.getenv("ADMIN_USERNAME", "").strip()
+    password = os.getenv("ADMIN_PASSWORD", "").strip()
+    if not username or not password:
+        return
+    existing = get_user_by_username(username)
+    if existing:
+        return
+    db = SessionLocal()
+    try:
+        user = User(
+            username=username,
+            email=None,
+            password_hash=hash_password(password),
+            is_approved=True,
+            is_admin=True,
+        )
+        db.add(user)
+        db.commit()
+        print("✅ 최초 관리자 계정 생성 완료:", username)
+    except Exception as e:
+        db.rollback()
+        raise e
     finally:
         db.close()
 

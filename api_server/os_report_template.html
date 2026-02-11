@@ -789,6 +789,7 @@
                 </div>
             </div>
             <div class="controls">
+                <span id="authUserBar" style="margin-right:10px;font-size:0.9rem;"></span>
                 <span class="theme-toggle" role="group" aria-label="테마 선택">
                     <button type="button" class="btn btn-theme" id="themeDark" title="다크 모드">다크</button>
                     <button type="button" class="btn btn-theme" id="themeLight" title="라이트 모드">라이트</button>
@@ -796,7 +797,7 @@
                 <button class="btn btn-primary" onclick="loadData()">새로고침</button>
             </div>
         </div>
-        
+
         <div class="stats-grid" id="statsGrid">
             <div class="stat-card">
                 <h3>전체 점검</h3>
@@ -1532,8 +1533,24 @@
             document.getElementById('themeLight').addEventListener('click', () => setTheme('light'));
         }
 
+        async function loadAuthUser() {
+            const bar = document.getElementById('authUserBar');
+            if (!bar) return;
+            try {
+                const res = await fetch('/api/auth/me', { credentials: 'include' });
+                if (!res.ok) { bar.textContent = ''; return; }
+                const user = await res.json();
+                bar.innerHTML = (user.username || '') + ' | <a href="#" onclick="doLogout(); return false;">로그아웃</a>' + (user.is_admin ? ' | <a href="/api/admin">회원 승인</a>' : '');
+            } catch (e) { bar.textContent = ''; }
+        }
+        async function doLogout() {
+            await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+            window.location.href = '/login';
+        }
+
         // 초기화
         document.addEventListener('DOMContentLoaded', () => {
+            loadAuthUser();
             initTheme();
             initCharts();
             loadData();

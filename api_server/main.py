@@ -2,9 +2,9 @@
 Ansible 점검 결과 수집 API 서버
 FastAPI 기반으로 점검 결과를 받아서 DB에 저장
 """
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone, timedelta
@@ -12,13 +12,35 @@ from contextlib import asynccontextmanager
 import uvicorn
 import json
 import asyncio
-from database import init_db, save_check_result, get_check_results
-from models import CheckResult
+from pathlib import Path
+
+from database import (
+    init_db,
+    save_check_result,
+    get_check_results,
+    ensure_admin_user,
+    get_user_by_username,
+    create_user,
+    verify_password,
+    get_all_users,
+    set_user_approved,
+    delete_user,
+)
+from models import CheckResult, User
+from auth import (
+    create_access_token,
+    get_current_user,
+    get_current_admin,
+    get_token_from_request,
+    decode_access_token,
+    COOKIE_NAME,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 서버 시작 시
     init_db()
+    ensure_admin_user()
     print("✅ 데이터베이스 초기화 완료")
     yield
     # 서버 종료 시 (필요한 경우 정리 작업)
@@ -71,12 +93,44 @@ class CheckResultRequest(BaseModel):
     results: Dict[str, Any]
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    email: Optional[str] = None
+
+
+
+
+def _read_template(name: str) -> str:
+    """api_server 디렉터리 내 HTML 템플릿 읽기"""
+    path = Path(__file__).parent / name
+    return path.read_text(encoding="utf-8")
 
 
 @app.get("/")
-async def root():
-    """루트 엔드포인트 - 대시보드로 리다이렉트"""
-    return RedirectResponse(url="/api/dashboard")
+async def root(request: Request):
+    """루트: 로그인 여부에 따라 /login 또는 /api/dashboard로 리다이렉트"""
+    token = get_token_from_request(request)
+    if token and decode_access_token(token):
+        return RedirectResponse(url="/api/dashboard")
+    return RedirectResponse(url="/login")
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page():
+    """로그인 페이지"""
+    return HTMLResponse(content=_read_template("login_template.html"))
+
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page():
+    """회원가입 페이지"""
+    return HTMLResponse(content=_read_template("register_template.html"))
 
 
 @app.get("/api/health")
@@ -90,6 +144,84 @@ async def health_check():
         "db": "ok" if db_ok else "error",
         "db_message": db_message if not db_ok else None,
     }
+
+
+# ---------- 인증 API ----------
+
+
+@app.post("/api/auth/register")
+async def auth_register(body: RegisterRequest):
+    """회원가입. 승인 전에는 로그인 불가."""
+    if get_user_by_username(body.username):
+        raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다.")
+    create_user(username=body.username, password=body.password, email=body.email)
+    return {"success": True, "message": "가입이 완료되었습니다. 관리자 승인 후 로그인할 수 있습니다."}
+
+
+@app.post("/api/auth/login")
+async def auth_login(body: LoginRequest, response: Response):
+    """로그인. 승인된 사용자만 성공. 성공 시 쿠키에 JWT 설정."""
+    user = get_user_by_username(body.username)
+    if not user or not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="아이디 또는 비밀번호가 올바르지 않습니다.")
+    if not user.is_approved:
+        raise HTTPException(status_code=403, detail="계정이 승인 대기 중입니다. 관리자 승인 후 로그인할 수 있습니다.")
+    token = create_access_token(user.id, user.username, user.is_admin)
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        httponly=True,
+        max_age=24 * 3600,
+        samesite="lax",
+    )
+    return {"success": True, "username": user.username}
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(response: Response):
+    """로그아웃: 쿠키 제거."""
+    response.delete_cookie(COOKIE_NAME)
+    return {"success": True}
+
+
+@app.get("/api/auth/me")
+async def auth_me(current_user: User = Depends(get_current_user)):
+    """현재 로그인 사용자 정보."""
+    return current_user.to_dict()
+
+
+# ---------- 관리자 API ----------
+
+
+@app.get("/api/admin/users")
+async def admin_list_users(_: User = Depends(get_current_admin)):
+    """가입자 목록 (승인 대기 포함). 관리자만."""
+    users = get_all_users()
+    return {"success": True, "users": [u.to_dict() for u in users]}
+
+
+@app.post("/api/admin/users/{user_id:int}/approve")
+async def admin_approve_user(user_id: int, _: User = Depends(get_current_admin)):
+    """사용자 승인. 관리자만."""
+    user = set_user_approved(user_id, True)
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    return {"success": True, "user": user.to_dict()}
+
+
+@app.post("/api/admin/users/{user_id:int}/reject")
+async def admin_reject_user(user_id: int, _: User = Depends(get_current_admin)):
+    """사용자 거부(승인 해제). 관리자만. 삭제는 하지 않고 is_approved=False."""
+    user = set_user_approved(user_id, False)
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    return {"success": True, "user": user.to_dict()}
+
+
+@app.get("/api/admin", response_class=HTMLResponse)
+async def admin_page(_: User = Depends(get_current_admin)):
+    """관리자 페이지: 회원 승인 목록."""
+    return HTMLResponse(content=_read_template("admin_template.html"))
 
 
 @app.post("/api/checks")
@@ -147,6 +279,7 @@ async def create_check_result(check_result: CheckResultRequest):
 
 @app.get("/api/checks")
 async def list_check_results(
+    current_user: User = Depends(get_current_user),
     check_type: Optional[str] = None,
     hostname: Optional[str] = None,
     checker: Optional[str] = None,
@@ -1552,7 +1685,7 @@ def format_db_result(result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @app.get("/api/db-checks/report", response_class=HTMLResponse)
-async def db_checks_report():
+async def db_checks_report(current_user: User = Depends(get_current_user)):
     """
     DB 점검 결과를 HTML 테이블 형식으로 표시 (필터링, 정렬, 페이지네이션, 차트, 실시간 업데이트 포함)
     
@@ -1586,7 +1719,7 @@ async def db_checks_report():
 
 
 @app.get("/api/os-checks/report", response_class=HTMLResponse)
-async def os_checks_report():
+async def os_checks_report(current_user: User = Depends(get_current_user)):
     """
     OS 점검 결과 리포트
     
@@ -1619,7 +1752,7 @@ async def os_checks_report():
 
 
 @app.get("/api/was-checks/report", response_class=HTMLResponse)
-async def was_checks_report():
+async def was_checks_report(current_user: User = Depends(get_current_user)):
     """
     WAS 점검 결과 리포트
     
@@ -1652,7 +1785,7 @@ async def was_checks_report():
 
 
 @app.get("/api/report", response_class=HTMLResponse)
-async def unified_report():
+async def unified_report(current_user: User = Depends(get_current_user)):
     """
     통합 점검 결과 대시보드 (신규)
     
@@ -1685,7 +1818,7 @@ async def unified_report():
 
 
 @app.get("/api/report-legacy", response_class=HTMLResponse)
-async def unified_report_legacy():
+async def unified_report_legacy(current_user: User = Depends(get_current_user)):
     """
     통합 점검 결과 리포트 (레거시) - DB, OS, WAS를 탭/iframe으로 통합
     
@@ -1718,7 +1851,7 @@ async def unified_report_legacy():
 
 
 @app.get("/api/json-viewer", response_class=HTMLResponse)
-async def json_viewer():
+async def json_viewer(current_user: User = Depends(get_current_user)):
     """
     점검 결과 JSON 뷰어 페이지 - PRETTY PRINT 적용
     
@@ -1751,7 +1884,7 @@ async def json_viewer():
 
 
 @app.get("/api/dashboard", response_class=HTMLResponse)
-async def dashboard():
+async def dashboard(current_user: User = Depends(get_current_user)):
     """
     대시보드 - 통합 점검 결과 리포트 (DB, OS, WAS를 탭으로 통합)
     
@@ -1798,7 +1931,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 @app.get("/api/db-checks/data")
-async def get_db_checks_data(limit: int = 100):
+async def get_db_checks_data(current_user: User = Depends(get_current_user), limit: int = 100):
     """DB 점검 결과를 JSON 형식으로 반환 (차트/필터링용)"""
     try:
         db_types = ["mariadb", "postgresql", "cubrid"]
@@ -1821,7 +1954,7 @@ async def get_db_checks_data(limit: int = 100):
 
 
 @app.get("/api/os-checks/data")
-async def get_os_checks_data(limit: int = 100):
+async def get_os_checks_data(current_user: User = Depends(get_current_user), limit: int = 100):
     """OS 점검 결과를 JSON 형식으로 반환 (DB/OS 공통 테이블용)"""
     try:
         results = get_check_results(check_type="os", limit=limit)
@@ -1838,7 +1971,7 @@ async def get_os_checks_data(limit: int = 100):
 
 
 @app.get("/api/was-checks/data")
-async def get_was_checks_data(limit: int = 1000):
+async def get_was_checks_data(current_user: User = Depends(get_current_user), limit: int = 1000):
     """WAS 점검 결과를 JSON 형식으로 반환 (DB/OS 공통 테이블용)"""
     try:
         # "was"와 "tomcat" 둘 다 조회 (플레이북에서 "was"로 저장하지만 이전에는 "tomcat"일 수 있음)
