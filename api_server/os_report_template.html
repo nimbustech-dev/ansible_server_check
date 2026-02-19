@@ -1540,7 +1540,7 @@
                 const res = await fetch('/api/auth/me', { credentials: 'include' });
                 if (!res.ok) { bar.textContent = ''; return; }
                 const user = await res.json();
-                bar.innerHTML = (user.username || '') + ' | <a href="#" onclick="doLogout(); return false;">로그아웃</a>' + (user.is_admin ? ' | <a href="/api/admin">회원 승인</a>' : '');
+                bar.innerHTML = (user.username || '') + ' | <a href="#" onclick="doLogout(); return false;">로그아웃</a>' + ((user.role === 'admin' || user.role === 'maintainer') ? ' | <a href="/api/admin">회원 승인</a>' : '');
             } catch (e) { bar.textContent = ''; }
         }
         async function doLogout() {

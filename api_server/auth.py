@@ -1,5 +1,5 @@
 """
-JWT 발급/검증 및 get_current_user, get_current_admin 의존성
+JWT 발급/검증 및 get_current_user, 역할별 의존성 (admin/maintainer/operator/viewer)
 """
 import os
 from datetime import datetime, timezone, timedelta
@@ -12,6 +12,12 @@ from jose import JWTError, jwt
 from database import get_user_by_id
 from models import User
 
+# 역할 상수
+ROLE_ADMIN = "admin"
+ROLE_MAINTAINER = "maintainer"
+ROLE_OPERATOR = "operator"
+ROLE_VIEWER = "viewer"
+
 # JWT 설정 (환경변수 또는 기본값)
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "ansible-report-secret-change-in-production")
 ALGORITHM = "HS256"
@@ -19,13 +25,23 @@ ACCESS_TOKEN_EXPIRE_HOURS = 24
 COOKIE_NAME = "session"
 
 
-def create_access_token(user_id: int, username: str, is_admin: bool) -> str:
-    """JWT 액세스 토큰 생성"""
+def _user_role(user: User) -> str:
+    """User의 역할 반환 (role 컬럼 없을 때 is_admin으로 추론)"""
+    r = getattr(user, "role", None)
+    if r in (ROLE_ADMIN, ROLE_MAINTAINER, ROLE_OPERATOR, ROLE_VIEWER):
+        return r
+    return ROLE_ADMIN if user.is_admin else ROLE_VIEWER
+
+
+def create_access_token(user_id: int, username: str, role: Optional[str] = None, is_admin: Optional[bool] = None) -> str:
+    """JWT 액세스 토큰 생성. role 우선, 없으면 is_admin으로 admin/viewer 구분."""
     expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    r = role if role in (ROLE_ADMIN, ROLE_MAINTAINER, ROLE_OPERATOR, ROLE_VIEWER) else (ROLE_ADMIN if is_admin else ROLE_VIEWER)
     payload = {
         "sub": str(user_id),
         "username": username,
-        "is_admin": is_admin,
+        "role": r,
+        "is_admin": r == ROLE_ADMIN,
         "exp": expire,
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
@@ -61,8 +77,26 @@ async def get_current_user(request: Request) -> User:
 
 
 async def get_current_admin(request: Request) -> User:
-    """get_current_user + is_admin 검사. 관리자 아님 시 403."""
+    """Admin만 허용 (role == admin)."""
     user = await get_current_user(request)
-    if not user.is_admin:
+    if _user_role(user) != ROLE_ADMIN:
         raise HTTPException(status_code=403, detail="관리자만 접근할 수 있습니다")
+    return user
+
+
+async def get_current_maintainer(request: Request) -> User:
+    """Maintainer 이상 허용 (admin, maintainer)."""
+    user = await get_current_user(request)
+    r = _user_role(user)
+    if r not in (ROLE_ADMIN, ROLE_MAINTAINER):
+        raise HTTPException(status_code=403, detail="권한이 없습니다 (Maintainer 이상 필요)")
+    return user
+
+
+async def get_current_operator(request: Request) -> User:
+    """Operator 이상 허용 (admin, maintainer, operator)."""
+    user = await get_current_user(request)
+    r = _user_role(user)
+    if r not in (ROLE_ADMIN, ROLE_MAINTAINER, ROLE_OPERATOR):
+        raise HTTPException(status_code=403, detail="권한이 없습니다 (Operator 이상 필요)")
     return user

@@ -25,12 +25,20 @@ from database import (
     get_all_users,
     set_user_approved,
     delete_user,
+    set_user_role,
+    list_servers,
+    get_server,
+    create_server,
+    update_server,
+    delete_server,
+    set_server_check_enabled,
 )
 from models import CheckResult, User
 from auth import (
     create_access_token,
     get_current_user,
     get_current_admin,
+    get_current_maintainer,
     get_token_from_request,
     decode_access_token,
     COOKIE_NAME,
@@ -171,7 +179,8 @@ async def auth_login(body: LoginRequest, response: Response):
         raise HTTPException(status_code=401, detail="아이디 또는 비밀번호가 올바르지 않습니다.")
     if not user.is_approved:
         raise HTTPException(status_code=403, detail="계정이 승인 대기 중입니다. 관리자 승인 후 로그인할 수 있습니다.")
-    token = create_access_token(user.id, user.username, user.is_admin)
+    role = getattr(user, "role", None)
+    token = create_access_token(user.id, user.username, role=role, is_admin=user.is_admin)
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
@@ -195,19 +204,19 @@ async def auth_me(current_user: User = Depends(get_current_user)):
     return current_user.to_dict()
 
 
-# ---------- 관리자 API ----------
+# ---------- 관리자 API (Maintainer 이상: 목록/승인/거부, Admin 전용: 삭제/역할변경) ----------
 
 
 @app.get("/api/admin/users")
-async def admin_list_users(_: User = Depends(get_current_admin)):
-    """가입자 목록 (승인 대기 포함). 관리자만."""
+async def admin_list_users(_: User = Depends(get_current_maintainer)):
+    """가입자 목록 (승인 대기 포함). Maintainer 이상."""
     users = get_all_users()
     return {"success": True, "users": [u.to_dict() for u in users]}
 
 
 @app.post("/api/admin/users/{user_id:int}/approve")
-async def admin_approve_user(user_id: int, _: User = Depends(get_current_admin)):
-    """사용자 승인. 관리자만."""
+async def admin_approve_user(user_id: int, _: User = Depends(get_current_maintainer)):
+    """사용자 승인. Maintainer 이상."""
     user = set_user_approved(user_id, True)
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
@@ -215,18 +224,149 @@ async def admin_approve_user(user_id: int, _: User = Depends(get_current_admin))
 
 
 @app.post("/api/admin/users/{user_id:int}/reject")
-async def admin_reject_user(user_id: int, _: User = Depends(get_current_admin)):
-    """사용자 거부(승인 해제). 관리자만. 삭제는 하지 않고 is_approved=False."""
+async def admin_reject_user(user_id: int, _: User = Depends(get_current_maintainer)):
+    """사용자 거부(승인 해제). Maintainer 이상. 삭제는 하지 않고 is_approved=False."""
     user = set_user_approved(user_id, False)
     if not user:
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     return {"success": True, "user": user.to_dict()}
 
 
+@app.delete("/api/admin/users/{user_id:int}")
+async def admin_delete_user(user_id: int, current: User = Depends(get_current_admin)):
+    """사용자 삭제. Admin 전용. 본인 삭제 불가."""
+    if current.id == user_id:
+        raise HTTPException(status_code=400, detail="본인 계정은 삭제할 수 없습니다.")
+    if not delete_user(user_id):
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    return {"success": True}
+
+
+class SetRoleRequest(BaseModel):
+    role: str  # admin | maintainer | operator | viewer
+
+
+@app.patch("/api/admin/users/{user_id:int}/role")
+async def admin_set_user_role(user_id: int, body: SetRoleRequest, current: User = Depends(get_current_admin)):
+    """사용자 역할 변경. Admin 전용. 본인 역할 변경 불가."""
+    if current.id == user_id:
+        raise HTTPException(status_code=400, detail="본인 역할은 여기서 변경할 수 없습니다.")
+    if body.role not in ("admin", "maintainer", "operator", "viewer"):
+        raise HTTPException(status_code=400, detail="role은 admin, maintainer, operator, viewer 중 하나여야 합니다.")
+    user = set_user_role(user_id, body.role)
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    return {"success": True, "user": user.to_dict()}
+
+
 @app.get("/api/admin", response_class=HTMLResponse)
-async def admin_page(_: User = Depends(get_current_admin)):
-    """관리자 페이지: 회원 승인 목록."""
+async def admin_page(_: User = Depends(get_current_maintainer)):
+    """관리자 콘솔 (서버 관리 + 회원 관리). Maintainer 이상."""
     return HTMLResponse(content=_read_template("admin_template.html"))
+
+
+# ---------- 서버 관리 API (Maintainer 이상) ----------
+
+
+class ServerCreateRequest(BaseModel):
+    name: str
+    ip: str
+    os_type: str = "linux"
+    ssh_port: int = 22
+    ssh_user: str = "root"
+    check_enabled: bool = True
+    memo: Optional[str] = None
+
+
+class ServerUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    ip: Optional[str] = None
+    os_type: Optional[str] = None
+    ssh_port: Optional[int] = None
+    ssh_user: Optional[str] = None
+    check_enabled: Optional[bool] = None
+    memo: Optional[str] = None
+
+
+class CheckEnabledRequest(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/admin/servers")
+async def admin_list_servers(
+    check_enabled: Optional[bool] = None,
+    _: User = Depends(get_current_maintainer),
+):
+    """서버 목록. Maintainer 이상."""
+    servers = list_servers(check_enabled=check_enabled)
+    return {"success": True, "servers": [s.to_dict() for s in servers]}
+
+
+@app.post("/api/admin/servers")
+async def admin_create_server(body: ServerCreateRequest, _: User = Depends(get_current_maintainer)):
+    """서버 추가. Maintainer 이상."""
+    s = create_server(
+        name=body.name,
+        ip=body.ip,
+        os_type=body.os_type,
+        ssh_port=body.ssh_port,
+        ssh_user=body.ssh_user,
+        check_enabled=body.check_enabled,
+        memo=body.memo,
+    )
+    return {"success": True, "server": s.to_dict()}
+
+
+@app.get("/api/admin/servers/{server_id:int}")
+async def admin_get_server(server_id: int, _: User = Depends(get_current_maintainer)):
+    """서버 단건 조회. Maintainer 이상."""
+    s = get_server(server_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="서버를 찾을 수 없습니다.")
+    return {"success": True, "server": s.to_dict()}
+
+
+@app.put("/api/admin/servers/{server_id:int}")
+async def admin_update_server(
+    server_id: int,
+    body: ServerUpdateRequest,
+    _: User = Depends(get_current_maintainer),
+):
+    """서버 수정. Maintainer 이상."""
+    s = update_server(
+        server_id,
+        name=body.name,
+        ip=body.ip,
+        os_type=body.os_type,
+        ssh_port=body.ssh_port,
+        ssh_user=body.ssh_user,
+        check_enabled=body.check_enabled,
+        memo=body.memo,
+    )
+    if not s:
+        raise HTTPException(status_code=404, detail="서버를 찾을 수 없습니다.")
+    return {"success": True, "server": s.to_dict()}
+
+
+@app.delete("/api/admin/servers/{server_id:int}")
+async def admin_delete_server(server_id: int, _: User = Depends(get_current_maintainer)):
+    """서버 삭제. Maintainer 이상."""
+    if not delete_server(server_id):
+        raise HTTPException(status_code=404, detail="서버를 찾을 수 없습니다.")
+    return {"success": True}
+
+
+@app.patch("/api/admin/servers/{server_id:int}/check-enabled")
+async def admin_set_server_check_enabled(
+    server_id: int,
+    body: CheckEnabledRequest,
+    _: User = Depends(get_current_maintainer),
+):
+    """서버 점검 대상 여부 설정. Maintainer 이상."""
+    s = set_server_check_enabled(server_id, body.enabled)
+    if not s:
+        raise HTTPException(status_code=404, detail="서버를 찾을 수 없습니다.")
+    return {"success": True, "server": s.to_dict()}
 
 
 @app.post("/api/checks")

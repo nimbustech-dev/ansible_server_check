@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
-from models import Base, CheckResult, User
+from models import Base, CheckResult, User, Server
 from typing import Optional, List, Dict, Any, Tuple
 
 # 비밀번호 해시 (bcrypt 직접 사용 - passlib와 bcrypt 5.x 호환 이슈 회피)
@@ -218,7 +218,7 @@ def get_user_by_id(user_id: int) -> Optional[User]:
 
 
 def create_user(username: str, password: str, email: Optional[str] = None) -> User:
-    """회원가입: 사용자 생성. 비밀번호는 해시 후 저장."""
+    """회원가입: 사용자 생성. 비밀번호는 해시 후 저장. 기본 역할 viewer."""
     db = SessionLocal()
     try:
         user = User(
@@ -227,6 +227,7 @@ def create_user(username: str, password: str, email: Optional[str] = None) -> Us
             password_hash=hash_password(password),
             is_approved=False,
             is_admin=False,
+            role="viewer",
         )
         db.add(user)
         db.commit()
@@ -283,6 +284,147 @@ def delete_user(user_id: int) -> bool:
         db.close()
 
 
+def set_user_role(user_id: int, role: str) -> Optional[User]:
+    """사용자 역할 변경. role: admin | maintainer | operator | viewer."""
+    if role not in ("admin", "maintainer", "operator", "viewer"):
+        return None
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return None
+        user.role = role
+        user.is_admin = role == "admin"
+        db.commit()
+        db.refresh(user)
+        return user
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+# ---------- 서버(점검 대상) CRUD ----------
+
+
+def list_servers(check_enabled: Optional[bool] = None) -> List[Server]:
+    """서버 목록. check_enabled로 필터 가능."""
+    db = SessionLocal()
+    try:
+        q = db.query(Server).order_by(Server.id.asc())
+        if check_enabled is not None:
+            q = q.filter(Server.check_enabled == check_enabled)
+        return q.all()
+    finally:
+        db.close()
+
+
+def get_server(server_id: int) -> Optional[Server]:
+    """서버 단건 조회."""
+    db = SessionLocal()
+    try:
+        return db.query(Server).filter(Server.id == server_id).first()
+    finally:
+        db.close()
+
+
+def create_server(
+    name: str,
+    ip: str,
+    os_type: str = "linux",
+    ssh_port: int = 22,
+    ssh_user: str = "root",
+    check_enabled: bool = True,
+    memo: Optional[str] = None,
+) -> Server:
+    """서버 추가."""
+    db = SessionLocal()
+    try:
+        s = Server(
+            name=name.strip(),
+            ip=ip.strip(),
+            os_type=(os_type or "linux").strip(),
+            ssh_port=ssh_port,
+            ssh_user=(ssh_user or "root").strip(),
+            check_enabled=check_enabled,
+            memo=memo.strip() if memo else None,
+        )
+        db.add(s)
+        db.commit()
+        db.refresh(s)
+        return s
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def update_server(
+    server_id: int,
+    name: Optional[str] = None,
+    ip: Optional[str] = None,
+    os_type: Optional[str] = None,
+    ssh_port: Optional[int] = None,
+    ssh_user: Optional[str] = None,
+    check_enabled: Optional[bool] = None,
+    memo: Optional[str] = None,
+) -> Optional[Server]:
+    """서버 수정. None인 필드는 변경하지 않음."""
+    db = SessionLocal()
+    try:
+        s = db.query(Server).filter(Server.id == server_id).first()
+        if not s:
+            return None
+        if name is not None:
+            s.name = name.strip()
+        if ip is not None:
+            s.ip = ip.strip()
+        if os_type is not None:
+            s.os_type = os_type.strip()
+        if ssh_port is not None:
+            s.ssh_port = ssh_port
+        if ssh_user is not None:
+            s.ssh_user = ssh_user.strip()
+        if check_enabled is not None:
+            s.check_enabled = check_enabled
+        if memo is not None:
+            s.memo = memo.strip() or None
+        from datetime import datetime
+        s.updated_at = datetime.now()
+        db.commit()
+        db.refresh(s)
+        return s
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def delete_server(server_id: int) -> bool:
+    """서버 삭제."""
+    db = SessionLocal()
+    try:
+        s = db.query(Server).filter(Server.id == server_id).first()
+        if not s:
+            return False
+        db.delete(s)
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def set_server_check_enabled(server_id: int, enabled: bool) -> Optional[Server]:
+    """서버 점검 대상 여부 설정."""
+    return update_server(server_id, check_enabled=enabled)
+
+
 def ensure_admin_user():
     """서버 기동 시 .env의 ADMIN_USERNAME, ADMIN_PASSWORD로 최초 관리자 생성 (없을 때만)"""
     username = os.getenv("ADMIN_USERNAME", "").strip()
@@ -300,6 +442,7 @@ def ensure_admin_user():
             password_hash=hash_password(password),
             is_approved=True,
             is_admin=True,
+            role="admin",
         )
         db.add(user)
         db.commit()
