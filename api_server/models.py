@@ -64,7 +64,7 @@ class CheckResult(Base):
 
 
 class Server(Base):
-    """점검 대상 서버 (관리자 콘솔에서 추가/수정/삭제)"""
+    """점검 대상 서버 (관리자 콘솔에서 추가/수정/삭제). SSH 인증: key_file | password."""
     __tablename__ = "servers"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
@@ -75,6 +75,9 @@ class Server(Base):
     ssh_user = Column(String(100), nullable=False, default="root")
     check_enabled = Column(Boolean, nullable=False, default=True)  # 점검 대상 여부
     memo = Column(String(500), nullable=True)
+    ssh_auth_type = Column(String(20), nullable=False, default="key_file")  # key_file | password
+    ssh_key_path = Column(String(500), nullable=True)  # Ansible 실행 머신 기준 키 파일 경로
+    ssh_password_encrypted = Column(String(500), nullable=True)  # 비밀번호 암호화 저장
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
@@ -88,6 +91,8 @@ class Server(Base):
             "ssh_user": self.ssh_user,
             "check_enabled": self.check_enabled,
             "memo": self.memo or None,
+            "ssh_auth_type": getattr(self, "ssh_auth_type", "key_file") or "key_file",
+            "ssh_key_path": getattr(self, "ssh_key_path", None),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

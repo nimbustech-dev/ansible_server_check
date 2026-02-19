@@ -12,6 +12,9 @@ psycopg2-binary==2.9.9
 bcrypt>=4.0,<6
 python-jose[cryptography]==3.3.0
 
+# 서버 비밀번호 암호화 (동적 inventory)
+cryptography>=41.0.0
+
 # MariaDB/MySQL 사용 시 추가
 # pymysql==1.1.0
 # cryptography==41.0.7

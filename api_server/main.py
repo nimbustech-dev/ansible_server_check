@@ -14,6 +14,7 @@ import json
 import asyncio
 import csv
 import io
+import os
 from pathlib import Path
 
 from database import (
@@ -22,6 +23,7 @@ from database import (
     get_check_results,
     ensure_admin_user,
     get_user_by_username,
+    get_user_by_id,
     create_user,
     verify_password,
     get_all_users,
@@ -34,6 +36,7 @@ from database import (
     update_server,
     delete_server,
     set_server_check_enabled,
+    list_servers_for_inventory,
 )
 from models import CheckResult, User
 from auth import (
@@ -285,6 +288,9 @@ class ServerCreateRequest(BaseModel):
     ssh_user: str = "root"
     check_enabled: bool = True
     memo: Optional[str] = None
+    ssh_auth_type: str = "key_file"
+    ssh_key_path: Optional[str] = None
+    ssh_password: Optional[str] = None
 
 
 class ServerUpdateRequest(BaseModel):
@@ -295,6 +301,9 @@ class ServerUpdateRequest(BaseModel):
     ssh_user: Optional[str] = None
     check_enabled: Optional[bool] = None
     memo: Optional[str] = None
+    ssh_auth_type: Optional[str] = None
+    ssh_key_path: Optional[str] = None
+    ssh_password: Optional[str] = None
 
 
 class CheckEnabledRequest(BaseModel):
@@ -318,7 +327,8 @@ async def admin_list_servers(
 @app.post("/api/admin/servers")
 async def admin_create_server(body: ServerCreateRequest, _: User = Depends(get_current_maintainer)):
     """서버 추가. Maintainer 이상."""
-    s = create_server(
+    try:
+        s = create_server(
         name=body.name,
         ip=body.ip,
         os_type=body.os_type,
@@ -326,7 +336,12 @@ async def admin_create_server(body: ServerCreateRequest, _: User = Depends(get_c
         ssh_user=body.ssh_user,
         check_enabled=body.check_enabled,
         memo=body.memo,
+        ssh_auth_type=body.ssh_auth_type,
+        ssh_key_path=body.ssh_key_path,
+        ssh_password=body.ssh_password,
     )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"success": True, "server": s.to_dict()}
 
 
@@ -346,16 +361,22 @@ async def admin_update_server(
     _: User = Depends(get_current_maintainer),
 ):
     """서버 수정. Maintainer 이상."""
-    s = update_server(
-        server_id,
-        name=body.name,
-        ip=body.ip,
-        os_type=body.os_type,
-        ssh_port=body.ssh_port,
-        ssh_user=body.ssh_user,
-        check_enabled=body.check_enabled,
-        memo=body.memo,
-    )
+    try:
+        s = update_server(
+            server_id,
+            name=body.name,
+            ip=body.ip,
+            os_type=body.os_type,
+            ssh_port=body.ssh_port,
+            ssh_user=body.ssh_user,
+            check_enabled=body.check_enabled,
+            memo=body.memo,
+            ssh_auth_type=body.ssh_auth_type,
+            ssh_key_path=body.ssh_key_path,
+            ssh_password=body.ssh_password,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not s:
         raise HTTPException(status_code=404, detail="서버를 찾을 수 없습니다.")
     return {"success": True, "server": s.to_dict()}
@@ -380,6 +401,38 @@ async def admin_set_server_check_enabled(
     if not s:
         raise HTTPException(status_code=404, detail="서버를 찾을 수 없습니다.")
     return {"success": True, "server": s.to_dict()}
+
+
+async def require_inventory_auth(request: Request) -> None:
+    """Maintainer+ 세션 또는 INVENTORY_API_KEY로 인증. Cron/스크립트용."""
+    api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+    env_key = os.getenv("INVENTORY_API_KEY")
+    if api_key and env_key and api_key.strip() == env_key.strip():
+        return
+    token = get_token_from_request(request)
+    if token:
+        payload = decode_access_token(token)
+        if payload and "sub" in payload:
+            user = get_user_by_id(int(payload["sub"]))
+            if user and getattr(user, "role", None) in ("admin", "maintainer"):
+                return
+    raise HTTPException(status_code=401, detail="인증이 필요합니다 (Maintainer 이상 또는 INVENTORY_API_KEY)")
+
+
+@app.get("/api/inventory")
+async def get_inventory(_: None = Depends(require_inventory_auth)):
+    """
+    Ansible 동적 inventory JSON. check_enabled=True인 서버만 포함.
+    인증: Maintainer+ 세션 쿠키 또는 X-API-Key / api_key 쿼리(INVENTORY_API_KEY와 일치).
+    """
+    items = list_servers_for_inventory()
+    hosts = [x["host"] for x in items]
+    hostvars = {x["host"]: x["hostvars"] for x in items}
+    body = {
+        "all": {"hosts": hosts},
+        "_meta": {"hostvars": hostvars},
+    }
+    return Response(content=json.dumps(body), media_type="application/json")
 
 
 @app.post("/api/checks")

@@ -218,6 +218,21 @@
         <label>SSH 사용자</label>
         <input type="text" id="serverSshUser" value="root" placeholder="root">
       </div>
+      <div class="form-row">
+        <label>SSH 인증 방식</label>
+        <select id="serverSshAuthType" onchange="toggleServerAuthFields()">
+          <option value="key_file">키 파일</option>
+          <option value="password">비밀번호</option>
+        </select>
+      </div>
+      <div class="form-row" id="serverKeyPathRow">
+        <label>키 파일 경로</label>
+        <input type="text" id="serverSshKeyPath" placeholder="Ansible 실행 서버 기준 경로, 예: /opt/ansible-monitoring/.ssh/server.pem">
+      </div>
+      <div class="form-row" id="serverPasswordRow" style="display:none;">
+        <label>SSH 비밀번호</label>
+        <input type="password" id="serverSshPassword" placeholder="수정 시 비우면 기존 유지">
+      </div>
       <div class="form-row checkbox">
         <input type="checkbox" id="serverCheckEnabled" checked>
         <label for="serverCheckEnabled">점검 대상</label>
@@ -283,9 +298,15 @@
         tbody.innerHTML = '<tr><td colspan="8" class="empty">오류가 발생했습니다.</td></tr>';
       }
     }
+    function toggleServerAuthFields() {
+      const auth = document.getElementById('serverSshAuthType').value;
+      document.getElementById('serverKeyPathRow').style.display = auth === 'key_file' ? '' : 'none';
+      document.getElementById('serverPasswordRow').style.display = auth === 'password' ? '' : 'none';
+    }
     function openServerModal(id) {
       document.getElementById('serverId').value = id || '';
       document.getElementById('serverModalTitle').textContent = id ? '서버 수정' : '서버 추가';
+      document.getElementById('serverSshPassword').value = '';
       if (id) {
         fetch('/api/admin/servers/' + id, { credentials: 'include' }).then(r => r.json()).then(data => {
           const s = data.server;
@@ -294,17 +315,23 @@
           document.getElementById('serverOsType').value = s.os_type || 'linux';
           document.getElementById('serverSshPort').value = s.ssh_port || 22;
           document.getElementById('serverSshUser').value = s.ssh_user || 'root';
+          document.getElementById('serverSshAuthType').value = s.ssh_auth_type || 'key_file';
+          document.getElementById('serverSshKeyPath').value = s.ssh_key_path || '';
           document.getElementById('serverCheckEnabled').checked = s.check_enabled !== false;
           document.getElementById('serverMemo').value = s.memo || '';
-        }).catch(() => {});
+          toggleServerAuthFields();
+        }).catch(() => { toggleServerAuthFields(); });
       } else {
         document.getElementById('serverName').value = '';
         document.getElementById('serverIp').value = '';
         document.getElementById('serverOsType').value = 'linux';
         document.getElementById('serverSshPort').value = 22;
         document.getElementById('serverSshUser').value = 'root';
+        document.getElementById('serverSshAuthType').value = 'key_file';
+        document.getElementById('serverSshKeyPath').value = '';
         document.getElementById('serverCheckEnabled').checked = true;
         document.getElementById('serverMemo').value = '';
+        toggleServerAuthFields();
       }
       document.getElementById('serverModal').classList.add('show');
     }
@@ -313,12 +340,16 @@
     }
     async function saveServer() {
       const id = document.getElementById('serverId').value;
+      const authType = document.getElementById('serverSshAuthType').value;
       const payload = {
         name: document.getElementById('serverName').value.trim(),
         ip: document.getElementById('serverIp').value.trim(),
         os_type: document.getElementById('serverOsType').value,
         ssh_port: parseInt(document.getElementById('serverSshPort').value, 10) || 22,
         ssh_user: document.getElementById('serverSshUser').value.trim() || 'root',
+        ssh_auth_type: authType,
+        ssh_key_path: authType === 'key_file' ? document.getElementById('serverSshKeyPath').value.trim() || null : null,
+        ssh_password: authType === 'password' ? document.getElementById('serverSshPassword').value : null,
         check_enabled: document.getElementById('serverCheckEnabled').checked,
         memo: document.getElementById('serverMemo').value.trim() || null
       };
@@ -326,7 +357,7 @@
       try {
         const url = id ? '/api/admin/servers/' + id : '/api/admin/servers';
         const method = id ? 'PUT' : 'POST';
-        const res = await fetch(url, { method: method, credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(id ? payload : payload) });
+        const res = await fetch(url, { method: method, credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         const data = await res.json().catch(() => ({}));
         if (res.ok) { showMsg(id ? '수정되었습니다.' : '추가되었습니다.'); closeServerModal(); loadServers(); }
         else showMsg(data.detail || (Array.isArray(data.detail) ? data.detail.map(d => d.msg || d).join(', ') : '실패'), 'error');

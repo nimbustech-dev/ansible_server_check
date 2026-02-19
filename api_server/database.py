@@ -358,8 +358,18 @@ def create_server(
     ssh_user: str = "root",
     check_enabled: bool = True,
     memo: Optional[str] = None,
+    ssh_auth_type: str = "key_file",
+    ssh_key_path: Optional[str] = None,
+    ssh_password: Optional[str] = None,
 ) -> Server:
-    """서버 추가."""
+    """서버 추가. ssh_password 있으면 암호화해 저장."""
+    encrypted = None
+    if (ssh_auth_type or "key_file") == "password" and ssh_password and ssh_password.strip():
+        try:
+            from crypto_util import encrypt_password
+            encrypted = encrypt_password(ssh_password)
+        except ValueError as e:
+            raise ValueError("서버 SSH 비밀번호 저장을 위해 .env에 ENCRYPTION_KEY(또는 ANSIBLE_SERVER_ENCRYPTION_KEY)를 설정하세요.") from e
     db = SessionLocal()
     try:
         s = Server(
@@ -370,6 +380,9 @@ def create_server(
             ssh_user=(ssh_user or "root").strip(),
             check_enabled=check_enabled,
             memo=memo.strip() if memo else None,
+            ssh_auth_type=(ssh_auth_type or "key_file").strip(),
+            ssh_key_path=ssh_key_path.strip() if ssh_key_path else None,
+            ssh_password_encrypted=encrypted,
         )
         db.add(s)
         db.commit()
@@ -391,8 +404,11 @@ def update_server(
     ssh_user: Optional[str] = None,
     check_enabled: Optional[bool] = None,
     memo: Optional[str] = None,
+    ssh_auth_type: Optional[str] = None,
+    ssh_key_path: Optional[str] = None,
+    ssh_password: Optional[str] = None,
 ) -> Optional[Server]:
-    """서버 수정. None인 필드는 변경하지 않음."""
+    """서버 수정. None인 필드는 변경하지 않음. ssh_password 비우면 유지."""
     db = SessionLocal()
     try:
         s = db.query(Server).filter(Server.id == server_id).first()
@@ -412,6 +428,19 @@ def update_server(
             s.check_enabled = check_enabled
         if memo is not None:
             s.memo = memo.strip() or None
+        if ssh_auth_type is not None:
+            s.ssh_auth_type = ssh_auth_type.strip()
+        if ssh_key_path is not None:
+            s.ssh_key_path = ssh_key_path.strip() or None
+        if ssh_password is not None and (ssh_auth_type or getattr(s, "ssh_auth_type", "key_file")) == "password":
+            if ssh_password.strip():
+                try:
+                    from crypto_util import encrypt_password
+                    s.ssh_password_encrypted = encrypt_password(ssh_password)
+                except ValueError as e:
+                    raise ValueError("서버 SSH 비밀번호 저장을 위해 .env에 ENCRYPTION_KEY(또는 ANSIBLE_SERVER_ENCRYPTION_KEY)를 설정하세요.") from e
+            else:
+                s.ssh_password_encrypted = None
         from datetime import datetime
         s.updated_at = datetime.now()
         db.commit()
@@ -444,6 +473,41 @@ def delete_server(server_id: int) -> bool:
 def set_server_check_enabled(server_id: int, enabled: bool) -> Optional[Server]:
     """서버 점검 대상 여부 설정."""
     return update_server(server_id, check_enabled=enabled)
+
+
+def list_servers_for_inventory() -> List[Dict[str, Any]]:
+    """
+    동적 inventory용. check_enabled=True인 서버만, hostvars에 ansible_* 및 비밀번호(복호화) 포함.
+    반환: [ {"host": "name_or_name_id", "hostvars": {...}}, ... ]
+    """
+    servers = list_servers(check_enabled=True)
+    seen_names = {}
+    out = []
+    for s in servers:
+        name = (s.name or "").strip() or f"server_{s.id}"
+        if name in seen_names:
+            name = f"{name}_{s.id}"
+        seen_names[name] = True
+        auth_type = getattr(s, "ssh_auth_type", None) or "key_file"
+        hostvars = {
+            "ansible_host": s.ip,
+            "ansible_port": s.ssh_port,
+            "ansible_user": s.ssh_user or "root",
+        }
+        if auth_type == "key_file":
+            kp = getattr(s, "ssh_key_path", None)
+            if kp and (kp := (kp or "").strip()):
+                hostvars["ansible_ssh_private_key_file"] = kp
+        else:
+            enc = getattr(s, "ssh_password_encrypted", None)
+            if enc:
+                try:
+                    from crypto_util import decrypt_password
+                    hostvars["ansible_ssh_pass"] = decrypt_password(enc)
+                except Exception:
+                    pass
+        out.append({"host": name, "hostvars": hostvars})
+    return out
 
 
 def ensure_admin_user():
