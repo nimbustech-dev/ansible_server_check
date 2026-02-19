@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from models import Base, CheckResult, User, Server
 from typing import Optional, List, Dict, Any, Tuple
+from datetime import datetime
 
 # 비밀번호 해시 (bcrypt 직접 사용 - passlib와 bcrypt 5.x 호환 이슈 회피)
 def hash_password(password: str) -> str:
@@ -140,10 +141,18 @@ def get_check_results(
     check_type: Optional[str] = None,
     hostname: Optional[str] = None,
     checker: Optional[str] = None,
-    limit: int = 100
+    limit: int = 100,
+    created_after: Optional[datetime] = None,
+    created_before: Optional[datetime] = None,
+    ids: Optional[List[int]] = None,
 ) -> List[Dict[str, Any]]:
     """
     점검 결과 조회
+    
+    Args:
+        created_after: 이 시각 이후 created_at
+        created_before: 이 시각 이전 created_at
+        ids: 지정 시 해당 id만 조회 (다른 필터와 AND)
     
     Returns:
         점검 결과 리스트
@@ -168,6 +177,12 @@ def get_check_results(
             query = query.filter(CheckResult.hostname == hostname)
         if checker:
             query = query.filter(CheckResult.checker == checker)
+        if created_after is not None:
+            query = query.filter(CheckResult.created_at >= created_after)
+        if created_before is not None:
+            query = query.filter(CheckResult.created_at <= created_before)
+        if ids:
+            query = query.filter(CheckResult.id.in_(ids))
         
         # 최신순 정렬 및 제한
         results = query.order_by(CheckResult.created_at.desc()).limit(limit).all()
@@ -186,6 +201,12 @@ def get_check_results(
                     query = query.filter(CheckResult.hostname == hostname)
                 if checker:
                     query = query.filter(CheckResult.checker == checker)
+                if created_after is not None:
+                    query = query.filter(CheckResult.created_at >= created_after)
+                if created_before is not None:
+                    query = query.filter(CheckResult.created_at <= created_before)
+                if ids:
+                    query = query.filter(CheckResult.id.in_(ids))
                 results = query.order_by(CheckResult.created_at.desc()).limit(limit).all()
                 return [result.to_dict() for result in results]
             except Exception as e2:

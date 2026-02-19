@@ -754,6 +754,7 @@
         <a class="btn btn-primary" href="/api/was-checks/report" target="_blank" rel="noreferrer">WAS 리포트</a>
         <a class="btn" href="/api/report-legacy" target="_blank" rel="noreferrer">통합(기존)</a>
         <a class="btn" href="/api/json-viewer" target="_blank" rel="noreferrer">JSON 뷰어</a>
+        <button type="button" class="btn" onclick="openExportModal()">내보내기</button>
       </div>
     </div>
 
@@ -919,6 +920,52 @@
       <div class="modal-body">
         <div class="section-title" id="kpiListModalSub" style="margin-bottom: 10px;"></div>
         <div id="kpiListModalBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 내보내기 모달 -->
+  <div class="modal-overlay" id="exportModal">
+    <div class="modal" style="max-width: 90%; width: 800px;">
+      <div class="modal-header">
+        <h3>점검 결과 내보내기</h3>
+        <button class="modal-close" onclick="closeExportModal()">닫기</button>
+      </div>
+      <div class="modal-body">
+        <p class="section-title" style="margin-bottom: 8px;">현재 필터 기준 목록 (최대 500건 표시)</p>
+        <div class="filter-row" style="margin-bottom: 10px;">
+          <label class="chip"><input type="checkbox" id="exportSelectAll" onchange="toggleExportSelectAll(this.checked)"> 전체 선택</label>
+          <span style="margin-left: 12px; color: var(--muted);" id="exportSelectedCount">0건 선택</span>
+        </div>
+        <div style="max-height: 280px; overflow: auto; border: 1px solid var(--border); border-radius: 8px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr>
+                <th style="width: 36px;"><input type="checkbox" id="exportSelectAllHead" onchange="toggleExportSelectAll(this.checked)"></th>
+                <th>ID</th>
+                <th>호스트명</th>
+                <th>점검 유형</th>
+                <th>점검시간</th>
+                <th>담당자</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody id="exportTableBody"></tbody>
+          </table>
+        </div>
+        <div style="margin-top: 14px;">
+          <label>형식:</label>
+          <label class="chip" style="margin-left: 8px;"><input type="radio" name="exportFormat" value="json" checked> JSON</label>
+          <label class="chip"><input type="radio" name="exportFormat" value="csv"> CSV</label>
+        </div>
+        <div style="margin-top: 14px;">
+          <label for="exportLimit">필터 전체 시 최대 건수:</label>
+          <input type="number" id="exportLimit" value="1000" min="1" max="10000" style="width: 80px; margin-left: 8px;">
+        </div>
+        <div style="margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap;">
+          <button type="button" class="btn btn-primary" onclick="doExportSelected()">선택한 항목 내보내기</button>
+          <button type="button" class="btn" onclick="doExportAll()">필터 결과 전체 내보내기</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1256,6 +1303,153 @@
       saveFilterState(filterState);
       reloadDashboard();
       showToast('필터 초기화', '기본값(7일·전체 유형)으로 초기화했습니다.');
+    }
+
+    function getFilterDateRangeForExport() {
+      const range = filterState.range || 'all';
+      if (range === 'all') return { created_after: null, created_before: null };
+      let keys = [];
+      if (range === 'today') keys = [toKstDayKey(new Date())];
+      else if (range === '7d') keys = getLastNDaysKeys(7);
+      else if (range === '30d') keys = getLastNDaysKeys(30);
+      else return { created_after: null, created_before: null };
+      if (!keys.length) return { created_after: null, created_before: null };
+      const first = keys[0];
+      const last = keys[keys.length - 1];
+      return {
+        created_after: first + 'T00:00:00+09:00',
+        created_before: last + 'T23:59:59+09:00'
+      };
+    }
+
+    const EXPORT_TABLE_MAX = 500;
+
+    function openExportModal() {
+      const list = window.lastFilteredResults;
+      const tbody = document.getElementById('exportTableBody');
+      if (!tbody) return;
+      if (!list || !list.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="padding: 14px; color: var(--muted);">데이터가 없습니다. 새로고침 후 다시 열어 주세요.</td></tr>';
+        document.getElementById('exportSelectAll').disabled = true;
+        document.getElementById('exportSelectAllHead').disabled = true;
+      } else {
+        const slice = list.slice(0, EXPORT_TABLE_MAX);
+        const sorted = slice.slice().sort((a, b) => (getRecordTime(b)?.getTime() || 0) - (getRecordTime(a)?.getTime() || 0));
+        tbody.innerHTML = sorted.map(r => {
+          const id = (r.id != null) ? String(r.id) : '';
+          const host = escapeHtml(r.hostname || 'N/A');
+          const typeLabel = TYPE_LABEL[(r.check_type || '').toLowerCase()] || String(r.check_type || 'N/A').toUpperCase();
+          const type = escapeHtml(typeLabel);
+          const timeStr = formatDateTime(getRecordTime(r));
+          const checker = escapeHtml(r.checker || 'N/A');
+          const badge = statusBadgeHtml(r.status);
+          return '<tr><td><input type="checkbox" class="export-row-cb" data-id="' + escapeHtml(id) + '"></td><td>' + escapeHtml(id) + '</td><td>' + host + '</td><td>' + type + '</td><td>' + timeStr + '</td><td>' + checker + '</td><td>' + badge + '</td></tr>';
+        }).join('');
+        document.getElementById('exportSelectAll').disabled = false;
+        document.getElementById('exportSelectAllHead').disabled = false;
+        updateExportSelectedCount();
+      }
+      document.getElementById('exportModal').classList.add('active');
+    }
+
+    function closeExportModal() {
+      document.getElementById('exportModal').classList.remove('active');
+    }
+
+    function toggleExportSelectAll(checked) {
+      document.querySelectorAll('.export-row-cb').forEach(cb => { cb.checked = !!checked; });
+      document.getElementById('exportSelectAll').checked = !!checked;
+      document.getElementById('exportSelectAllHead').checked = !!checked;
+      updateExportSelectedCount();
+    }
+
+    function updateExportSelectedCount() {
+      const count = document.querySelectorAll('.export-row-cb:checked').length;
+      const el = document.getElementById('exportSelectedCount');
+      if (el) el.textContent = count + '건 선택';
+    }
+
+    (function initExportModalListeners() {
+      const tbody = document.getElementById('exportTableBody');
+      if (tbody) tbody.addEventListener('change', function(ev) {
+        if (ev.target && ev.target.classList.contains('export-row-cb')) {
+          const total = document.querySelectorAll('.export-row-cb').length;
+          const checked = document.querySelectorAll('.export-row-cb:checked').length;
+          const all = total > 0 && total === checked;
+          const sel = document.getElementById('exportSelectAll');
+          const head = document.getElementById('exportSelectAllHead');
+          if (sel) sel.checked = all;
+          if (head) head.checked = all;
+          updateExportSelectedCount();
+        }
+      });
+    })();
+
+    function getExportFormat() {
+      const radio = document.querySelector('input[name="exportFormat"]:checked');
+      return (radio && radio.value) || 'json';
+    }
+
+    async function downloadExportBlob(blob, filename) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    async function doExportSelected() {
+      const checked = document.querySelectorAll('.export-row-cb:checked');
+      const ids = Array.from(checked).map(cb => cb.getAttribute('data-id')).filter(Boolean);
+      if (!ids.length) {
+        alert('내보낼 항목을 선택해 주세요.');
+        return;
+      }
+      const fmt = getExportFormat();
+      const url = '/api/checks/export?format=' + encodeURIComponent(fmt) + '&ids=' + ids.join(',');
+      try {
+        const res = await fetch(url, { credentials: 'include' });
+        if (!res.ok) {
+          if (res.status === 401) alert('로그인이 필요합니다.');
+          else alert('내보내기 실패: ' + res.status);
+          return;
+        }
+        const blob = await res.blob();
+        await downloadExportBlob(blob, fmt === 'csv' ? 'check_results.csv' : 'check_results.json');
+        showToast('내보내기 완료', ids.length + '건 다운로드되었습니다.');
+      } catch (e) {
+        alert('내보내기 중 오류: ' + (e.message || e));
+      }
+    }
+
+    async function doExportAll() {
+      const fmt = getExportFormat();
+      const limit = parseInt(document.getElementById('exportLimit').value, 10) || 1000;
+      const limitClamped = Math.min(10000, Math.max(1, limit));
+      const dateRange = getFilterDateRangeForExport();
+      const params = new URLSearchParams();
+      params.set('format', fmt);
+      params.set('limit', String(limitClamped));
+      if (filterState.hostname && filterState.hostname.trim()) params.set('hostname', filterState.hostname.trim());
+      if (filterState.checker && filterState.checker.trim()) params.set('checker', filterState.checker.trim());
+      if (dateRange.created_after) params.set('created_after', dateRange.created_after);
+      if (dateRange.created_before) params.set('created_before', dateRange.created_before);
+      if (filterState.types.os && !filterState.types.db && !filterState.types.was) params.set('check_type', 'os');
+      else if (filterState.types.was && !filterState.types.os && !filterState.types.db) params.set('check_type', 'tomcat');
+      const url = '/api/checks/export?' + params.toString();
+      try {
+        const res = await fetch(url, { credentials: 'include' });
+        if (!res.ok) {
+          if (res.status === 401) alert('로그인이 필요합니다.');
+          else alert('내보내기 실패: ' + res.status);
+          return;
+        }
+        const blob = await res.blob();
+        await downloadExportBlob(blob, fmt === 'csv' ? 'check_results.csv' : 'check_results.json');
+        showToast('내보내기 완료', '필터 결과가 다운로드되었습니다.');
+      } catch (e) {
+        alert('내보내기 중 오류: ' + (e.message || e));
+      }
     }
 
     function showToast(title, msg) {

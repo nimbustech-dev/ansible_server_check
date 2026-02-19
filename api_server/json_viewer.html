@@ -265,6 +265,10 @@
             
             <button onclick="loadData()">🔄 데이터 불러오기</button>
             <button onclick="copyToClipboard()">📋 복사</button>
+            <span style="margin-left: 8px;">내보내기 형식:</span>
+            <label class="chip" style="margin-left: 4px;"><input type="radio" name="exportFormat" value="json" checked> JSON</label>
+            <label class="chip"><input type="radio" name="exportFormat" value="csv"> CSV</label>
+            <button onclick="downloadJsonFile()">💾 내보내기</button>
         </div>
         
         <div id="stats" class="stats" style="display: none;">
@@ -402,6 +406,42 @@
                 "'": '&#039;'
             };
             return text.replace(/[&<>"']/g, m => map[m]);
+        }
+        
+        function getExportFormat() {
+            const radio = document.querySelector('input[name="exportFormat"]:checked');
+            return (radio && radio.value) || 'json';
+        }
+        
+        function getExportUrl() {
+            const checkType = document.getElementById('checkType').value;
+            const limit = document.getElementById('limit').value;
+            const fmt = getExportFormat();
+            let url = `${API_BASE}/api/checks/export?limit=${limit}&format=${encodeURIComponent(fmt)}`;
+            if (checkType && checkType !== 'all') url += `&check_type=${encodeURIComponent(checkType)}`;
+            return url;
+        }
+        
+        async function downloadJsonFile() {
+            const url = getExportUrl();
+            const fmt = getExportFormat();
+            const filename = fmt === 'csv' ? 'check_results.csv' : 'check_results.json';
+            try {
+                const res = await fetch(url, { credentials: 'include' });
+                if (!res.ok) {
+                    if (res.status === 401) alert('로그인이 필요합니다.');
+                    else alert('내보내기 실패: ' + res.status);
+                    return;
+                }
+                const blob = await res.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            } catch (e) {
+                alert('내보내기 중 오류: ' + e.message);
+            }
         }
         
         function copyToClipboard() {

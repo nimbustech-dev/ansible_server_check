@@ -101,6 +101,27 @@ psql "postgresql://ansible_user:비밀번호@localhost:5432/ansible_checks" -c "
 
 ---
 
+## 관리자 페이지에서 500 (Internal Server Error)
+
+**증상**: `/api/admin` 접속 시 페이지는 뜨지만 "Failed to load resource: 500" 또는 회원/서버 목록이 안 뜸.
+
+**원인**: 배포 서버 DB 스키마가 최신이 아님 (회원 `role` 컬럼 없음, 또는 `servers` 테이블 없음).
+
+**조치** (배포 서버에 SSH 접속 후):
+
+1. **역할(role) 마이그레이션** (한 번만):
+   ```bash
+   cd /opt/ansible-monitoring/api_server
+   ./venv/bin/python3 migrate_add_role.py
+   ```
+2. **API 서버 재시작** (새 테이블 반영 및 코드 적용):
+   ```bash
+   systemctl restart ansible-api-server
+   ```
+3. 브라우저에서 관리자 페이지 새로고침.
+
+---
+
 ## ansible-api-server 서비스가 failed 상태일 때
 
 **증상**: `systemctl status ansible-api-server` 에서 `Active: failed` 또는 `activating (auto-restart)` 이며, `code=exited, status=1/FAILURE` 가 보입니다.

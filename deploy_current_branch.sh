@@ -149,7 +149,7 @@ echo ""
 
 # 5. 최종 확인 (배포 서버 localhost + 접속 주소 둘 다 확인)
 echo -e "${YELLOW}[5/5] 배포 확인...${NC}"
-sleep 2
+sleep 5
 LOCAL_CODE=""
 PUBLIC_CODE=""
 LOCAL_CODE=$(ssh -i "$SSH_KEY" -p "$SERVER_PORT" -o ConnectTimeout=5 "$SERVER_USER@$SERVER_HOST" "curl -s -o /dev/null -w '%{http_code}' http://localhost:${ACCESS_PORT}/api/health" 2>/dev/null || echo "000")

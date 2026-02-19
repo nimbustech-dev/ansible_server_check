@@ -12,6 +12,8 @@ from contextlib import asynccontextmanager
 import uvicorn
 import json
 import asyncio
+import csv
+import io
 from pathlib import Path
 
 from database import (
@@ -210,8 +212,15 @@ async def auth_me(current_user: User = Depends(get_current_user)):
 @app.get("/api/admin/users")
 async def admin_list_users(_: User = Depends(get_current_maintainer)):
     """가입자 목록 (승인 대기 포함). Maintainer 이상."""
-    users = get_all_users()
-    return {"success": True, "users": [u.to_dict() for u in users]}
+    try:
+        users = get_all_users()
+        return {"success": True, "users": [u.to_dict() for u in users]}
+    except Exception as e:
+        print(f"admin_list_users error: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="회원 목록을 불러올 수 없습니다. 배포 서버에서 migrate_add_role.py 실행 후 systemctl restart ansible-api-server 하세요.",
+        )
 
 
 @app.post("/api/admin/users/{user_id:int}/approve")
@@ -298,8 +307,12 @@ async def admin_list_servers(
     _: User = Depends(get_current_maintainer),
 ):
     """서버 목록. Maintainer 이상."""
-    servers = list_servers(check_enabled=check_enabled)
-    return {"success": True, "servers": [s.to_dict() for s in servers]}
+    try:
+        servers = list_servers(check_enabled=check_enabled)
+        return {"success": True, "servers": [s.to_dict() for s in servers]}
+    except Exception as e:
+        print(f"admin_list_servers error: {e}")
+        return {"success": True, "servers": [], "message": "서버 테이블이 없을 수 있습니다. 서비스 재시작 후 다시 시도하세요."}
 
 
 @app.post("/api/admin/servers")
@@ -481,6 +494,85 @@ async def list_check_results(
             status_code=500,
             detail=f"점검 결과 조회 중 오류 발생: {str(e)}"
         )
+
+
+def _parse_optional_date(s: Optional[str]) -> Optional[datetime]:
+    if not s or not s.strip():
+        return None
+    s = s.strip()
+    try:
+        if "T" in s:
+            return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return datetime.fromisoformat(s + "T00:00:00")
+    except (ValueError, TypeError):
+        return None
+
+
+@app.get("/api/checks/export")
+async def export_check_results(
+    current_user: User = Depends(get_current_user),
+    check_type: Optional[str] = None,
+    hostname: Optional[str] = None,
+    checker: Optional[str] = None,
+    limit: int = 1000,
+    format: str = "json",
+    created_after: Optional[str] = None,
+    created_before: Optional[str] = None,
+    ids: Optional[str] = None,
+):
+    """
+    저장된 점검 결과를 JSON 또는 CSV 파일로 내보내기.
+    format: json | csv
+    created_after, created_before: ISO 날짜(예 2026-02-01)
+    ids: 쉼표 구분 ID 목록(예 1,2,3). 지정 시 해당 ID만 내보내기.
+    """
+    created_after_dt = _parse_optional_date(created_after)
+    created_before_dt = _parse_optional_date(created_before)
+    id_list = None
+    if ids:
+        try:
+            id_list = [int(x.strip()) for x in ids.split(",") if x.strip()]
+        except ValueError:
+            id_list = None
+    results = get_check_results(
+        check_type=check_type,
+        hostname=hostname,
+        checker=checker,
+        limit=limit,
+        created_after=created_after_dt,
+        created_before=created_before_dt,
+        ids=id_list,
+    )
+    export_format = (format or "json").strip().lower()
+    if export_format == "csv":
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["id", "check_type", "hostname", "check_time", "checker", "status", "created_at", "results"])
+        for r in results:
+            results_json = json.dumps(r.get("results") or {}, ensure_ascii=False)
+            writer.writerow([
+                r.get("id"),
+                r.get("check_type") or "",
+                r.get("hostname") or "",
+                r.get("check_time") or "",
+                r.get("checker") or "",
+                r.get("status") or "",
+                r.get("created_at") or "",
+                results_json,
+            ])
+        body = buf.getvalue().encode("utf-8")
+        return Response(
+            content=body,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=\"check_results.csv\""},
+        )
+    payload = {"success": True, "count": len(results), "results": results}
+    body = json.dumps(payload, ensure_ascii=False, indent=2)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=\"check_results.json\""},
+    )
 
 
 def format_check_time(check_time_str: str) -> str:
