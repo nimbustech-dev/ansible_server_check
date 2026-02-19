@@ -38,10 +38,15 @@ from auth import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 서버 시작 시
-    init_db()
-    ensure_admin_user()
-    print("✅ 데이터베이스 초기화 완료")
+    # 서버 시작 시 (DB 실패해도 프로세스는 기동해 두고, /api/health에서 degraded 표시)
+    try:
+        init_db()
+        ensure_admin_user()
+        print("✅ 데이터베이스 초기화 완료")
+    except Exception as e:
+        import traceback
+        print(f"⚠️ DB 초기화 실패 (서비스는 기동함, /api/health에서 db 상태 확인): {e}", flush=True)
+        traceback.print_exc()
     yield
     # 서버 종료 시 (필요한 경우 정리 작업)
 
@@ -1884,13 +1889,14 @@ async def json_viewer(current_user: User = Depends(get_current_user)):
 
 
 @app.get("/api/dashboard", response_class=HTMLResponse)
-async def dashboard(current_user: User = Depends(get_current_user)):
+async def dashboard(request: Request):
     """
     대시보드 - 통합 점검 결과 리포트 (DB, OS, WAS를 탭으로 통합)
-    
-    Returns:
-        HTML 형식의 대시보드
+    미인증 시 로그인 페이지로 리다이렉트 (JSON 401 대신 페이지가 보이도록).
     """
+    token = get_token_from_request(request)
+    if not token or not decode_access_token(token):
+        return RedirectResponse(url="/login")
     try:
         import os
         template_path = os.path.join(os.path.dirname(__file__), "dashboard_template.html")
