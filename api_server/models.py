@@ -63,6 +63,30 @@ class CheckResult(Base):
         }
 
 
+class CheckItem(Base):
+    """점검 유형별 세부 항목 (관리자에서 추가/삭제, 활성화 여부). 신규 점검 시 활성화된 항목만 반영."""
+    __tablename__ = "check_items"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    check_type = Column(String(50), nullable=False, index=True)  # os, was, mariadb, postgresql, cubrid, tomcat
+    item_key = Column(String(100), nullable=False, index=True)   # results 내 키 (cpu, memory, installation 등)
+    display_name = Column(String(200), nullable=True)             # UI 표시명
+    enabled = Column(Boolean, nullable=False, default=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "check_type": self.check_type,
+            "item_key": self.item_key,
+            "display_name": self.display_name or self.item_key,
+            "enabled": self.enabled,
+            "sort_order": self.sort_order,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class Server(Base):
     """점검 대상 서버 (관리자 콘솔에서 추가/수정/삭제). SSH 인증: key_file | password."""
     __tablename__ = "servers"

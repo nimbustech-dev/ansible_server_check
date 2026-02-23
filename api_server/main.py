@@ -2,7 +2,7 @@
 Ansible 점검 결과 수집 API 서버
 FastAPI 기반으로 점검 결과를 받아서 DB에 저장
 """
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel
@@ -32,11 +32,20 @@ from database import (
     set_user_role,
     list_servers,
     get_server,
+    get_server_by_name,
+    get_server_by_ip,
     create_server,
     update_server,
     delete_server,
     set_server_check_enabled,
     list_servers_for_inventory,
+    seed_default_check_items_if_empty,
+    list_check_items,
+    get_check_item,
+    get_enabled_item_keys_for_type,
+    create_check_item,
+    update_check_item,
+    delete_check_item,
 )
 from models import CheckResult, User
 from auth import (
@@ -55,6 +64,7 @@ async def lifespan(app: FastAPI):
     try:
         init_db()
         ensure_admin_user()
+        seed_default_check_items_if_empty()
         print("✅ 데이터베이스 초기화 완료")
     except Exception as e:
         import traceback
@@ -403,6 +413,238 @@ async def admin_set_server_check_enabled(
     return {"success": True, "server": s.to_dict()}
 
 
+def _normalize_excel_header(header: str) -> Optional[str]:
+    """엑셀 헤더를 표준 컬럼명으로 매핑 (name, ip, password, ssh_user, os_type, ssh_port, memo, ssh_auth_type, ssh_key_path)."""
+    if not header:
+        return None
+    s = (header or "").strip()
+    h = s.lower().replace(" ", "")
+    if h == "name" or s == "호스트명":
+        return "name"
+    if h == "ip":
+        return "ip"
+    if h == "password" or s == "비밀번호":
+        return "password"
+    if h in ("ssh_user", "sshuser") or s in ("SSH사용자", "ssh사용자"):
+        return "ssh_user"
+    if h in ("os_type", "ostype") or s in ("OS유형", "os유형"):
+        return "os_type"
+    if h in ("ssh_port", "sshport") or s in ("SSH포트", "ssh포트"):
+        return "ssh_port"
+    if h == "memo" or s == "비고":
+        return "memo"
+    if h in ("ssh_auth_type", "sshauthtype") or s in ("인증방식", "ssh인증방식"):
+        return "ssh_auth_type"
+    if h in ("ssh_key_path", "sshkeypath") or s in ("키경로", "키파일경로"):
+        return "ssh_key_path"
+    return None
+
+
+@app.post("/api/admin/servers/bulk-upload")
+async def admin_servers_bulk_upload(
+    file: UploadFile = File(..., description=".xlsx 엑셀 파일"),
+    _: User = Depends(get_current_maintainer),
+):
+    """
+    서버 접속 정보 엑셀 일괄 업로드.
+    컬럼: name/호스트명, ip, password/비밀번호, ssh_user/SSH사용자.
+    비밀번호·ssh_user 셀 비어 있으면 기존 값 유지. name 또는 ip로 서버 매칭.
+    """
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail=".xlsx 파일만 업로드 가능합니다.")
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(status_code=500, detail="엑셀 처리 라이브러리(openpyxl)가 설치되지 않았습니다.")
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"엑셀 파일을 열 수 없습니다: {e}")
+    ws = wb.active
+    if not ws:
+        raise HTTPException(status_code=400, detail="엑셀 시트가 비어 있습니다.")
+    rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+    if len(rows) < 2:
+        return {"success": True, "updated": 0, "created": 0, "failed": 0, "details": [], "message": "데이터 행이 없습니다."}
+    header_row = rows[0]
+    col_map = {}
+    for idx, cell in enumerate(header_row):
+        key = _normalize_excel_header(str(cell) if cell is not None else "")
+        if key:
+            col_map[idx] = key
+    if "name" not in col_map and "ip" not in col_map:
+        raise HTTPException(
+            status_code=400,
+            detail="엑셀 첫 행에 name/호스트명 또는 ip 컬럼이 필요합니다.",
+        )
+
+    def _get_cell(col_key: str) -> str:
+        for idx, key in col_map.items():
+            if key == col_key and idx < len(values) and values[idx] is not None:
+                return str(values[idx]).strip()
+        return ""
+
+    updated = 0
+    created = 0
+    failed = 0
+    details: List[Dict[str, Any]] = []
+    for row_idx, row in enumerate(rows[1:], start=2):
+        values = list(row) if row else []
+        name = _get_cell("name")
+        ip = _get_cell("ip")
+        password = _get_cell("password")
+        ssh_user = _get_cell("ssh_user")
+        os_type = _get_cell("os_type")
+        ssh_port_str = _get_cell("ssh_port")
+        memo = _get_cell("memo")
+        ssh_auth_type = _get_cell("ssh_auth_type")
+        ssh_key_path = _get_cell("ssh_key_path")
+
+        if not name and not ip:
+            failed += 1
+            details.append({"row": row_idx, "name_or_ip": "(비어 있음)", "error": "name 또는 ip가 필요합니다."})
+            continue
+        server = None
+        if name:
+            server = get_server_by_name(name)
+        if not server and ip:
+            server = get_server_by_ip(ip)
+        if server:
+            try:
+                kwargs: Dict[str, Any] = {}
+                if password:
+                    kwargs["ssh_auth_type"] = "password"
+                    kwargs["ssh_password"] = password
+                if ssh_user:
+                    kwargs["ssh_user"] = ssh_user
+                if kwargs:
+                    update_server(server.id, **kwargs)
+                    updated += 1
+            except Exception as e:
+                failed += 1
+                details.append({"row": row_idx, "name_or_ip": name or ip, "error": str(e)})
+            continue
+        if name and ip:
+            try:
+                ssh_port = 22
+                if ssh_port_str:
+                    try:
+                        ssh_port = int(ssh_port_str)
+                    except ValueError:
+                        ssh_port = 22
+                auth_type = (ssh_auth_type or "").strip() or ("password" if password else "key_file")
+                if auth_type not in ("password", "key_file"):
+                    auth_type = "password" if password else "key_file"
+                create_server(
+                    name=name,
+                    ip=ip,
+                    os_type=os_type or "linux",
+                    ssh_port=ssh_port,
+                    ssh_user=ssh_user or "root",
+                    check_enabled=True,
+                    memo=memo or None,
+                    ssh_auth_type=auth_type,
+                    ssh_key_path=ssh_key_path or None,
+                    ssh_password=password or None,
+                )
+                created += 1
+            except Exception as e:
+                failed += 1
+                details.append({"row": row_idx, "name_or_ip": name or ip, "error": str(e)})
+        else:
+            failed += 1
+            details.append({"row": row_idx, "name_or_ip": name or ip, "error": "신규 등록 시 name과 ip가 모두 필요합니다."})
+    return {
+        "success": True,
+        "updated": updated,
+        "created": created,
+        "failed": failed,
+        "details": details,
+    }
+
+
+# ---------- 점검 항목 관리 (5.1 상세 점검 항목 설정) ----------
+
+
+class CheckItemCreateRequest(BaseModel):
+    check_type: str
+    item_key: str
+    display_name: Optional[str] = None
+    enabled: bool = True
+    sort_order: int = 0
+
+
+class CheckItemUpdateRequest(BaseModel):
+    display_name: Optional[str] = None
+    enabled: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+@app.get("/api/admin/check-items")
+async def admin_list_check_items(
+    check_type: Optional[str] = None,
+    _: User = Depends(get_current_maintainer),
+):
+    """점검 항목 목록. check_type 지정 시 해당 유형만. Maintainer 이상."""
+    try:
+        items = list_check_items(check_type=check_type)
+        return {"success": True, "items": [x.to_dict() for x in items]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/check-items")
+async def admin_create_check_item(
+    body: CheckItemCreateRequest,
+    _: User = Depends(get_current_maintainer),
+):
+    """점검 항목 추가. 변경 즉시 신규 점검에 반영. Maintainer 이상."""
+    try:
+        item = create_check_item(
+            check_type=body.check_type,
+            item_key=body.item_key,
+            display_name=body.display_name,
+            enabled=body.enabled,
+            sort_order=body.sort_order,
+        )
+        return {"success": True, "item": item.to_dict()}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/admin/check-items/{item_id:int}")
+async def admin_update_check_item(
+    item_id: int,
+    body: CheckItemUpdateRequest,
+    _: User = Depends(get_current_maintainer),
+):
+    """점검 항목 수정 (표시명, 활성화 여부). Maintainer 이상."""
+    item = update_check_item(
+        item_id,
+        display_name=body.display_name,
+        enabled=body.enabled,
+        sort_order=body.sort_order,
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="점검 항목을 찾을 수 없습니다.")
+    return {"success": True, "item": item.to_dict()}
+
+
+@app.delete("/api/admin/check-items/{item_id:int}")
+async def admin_delete_check_item(
+    item_id: int,
+    _: User = Depends(get_current_maintainer),
+):
+    """점검 항목 삭제. Maintainer 이상."""
+    if not delete_check_item(item_id):
+        raise HTTPException(status_code=404, detail="점검 항목을 찾을 수 없습니다.")
+    return {"success": True}
+
+
 async def require_inventory_auth(request: Request) -> None:
     """Maintainer+ 세션 또는 INVENTORY_API_KEY로 인증. Cron/스크립트용."""
     api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
@@ -447,6 +689,11 @@ async def create_check_result(check_result: CheckResultRequest):
         저장된 결과 정보
     """
     try:
+        # 점검 항목 설정 반영: 활성화된 항목만 저장 (관리자에서 설정한 경우)
+        results_to_save = check_result.results or {}
+        enabled_keys = get_enabled_item_keys_for_type(check_result.check_type)
+        if enabled_keys is not None and isinstance(results_to_save, dict):
+            results_to_save = {k: v for k, v in results_to_save.items() if k in enabled_keys}
         # DB에 저장
         result_id = save_check_result(
             check_type=check_result.check_type,
@@ -454,7 +701,7 @@ async def create_check_result(check_result: CheckResultRequest):
             check_time=check_result.check_time,
             checker=check_result.checker,
             status=check_result.status,
-            results=check_result.results
+            results=results_to_save
         )
         
         # WebSocket으로 실시간 업데이트 브로드캐스트

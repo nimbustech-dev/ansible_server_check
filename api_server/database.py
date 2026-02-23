@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
-from models import Base, CheckResult, User, Server
+from models import Base, CheckResult, User, Server, CheckItem
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 
@@ -350,6 +350,28 @@ def get_server(server_id: int) -> Optional[Server]:
         db.close()
 
 
+def get_server_by_name(name: str) -> Optional[Server]:
+    """호스트명으로 서버 조회 (엑셀 일괄 업로드 등)."""
+    if not name or not name.strip():
+        return None
+    db = SessionLocal()
+    try:
+        return db.query(Server).filter(Server.name == name.strip()).first()
+    finally:
+        db.close()
+
+
+def get_server_by_ip(ip: str) -> Optional[Server]:
+    """IP로 서버 조회 (엑셀 일괄 업로드 등)."""
+    if not ip or not ip.strip():
+        return None
+    db = SessionLocal()
+    try:
+        return db.query(Server).filter(Server.ip == ip.strip()).first()
+    finally:
+        db.close()
+
+
 def create_server(
     name: str,
     ip: str,
@@ -439,8 +461,7 @@ def update_server(
                     s.ssh_password_encrypted = encrypt_password(ssh_password)
                 except ValueError as e:
                     raise ValueError("서버 SSH 비밀번호 저장을 위해 .env에 ENCRYPTION_KEY(또는 ANSIBLE_SERVER_ENCRYPTION_KEY)를 설정하세요.") from e
-            else:
-                s.ssh_password_encrypted = None
+            # 비밀번호 미입력(빈 값) 시: 기존 값 유지. 변경하지 않음.
         from datetime import datetime
         s.updated_at = datetime.now()
         db.commit()
@@ -473,6 +494,210 @@ def delete_server(server_id: int) -> bool:
 def set_server_check_enabled(server_id: int, enabled: bool) -> Optional[Server]:
     """서버 점검 대상 여부 설정."""
     return update_server(server_id, check_enabled=enabled)
+
+
+# ---------- 점검 항목(CheckItem) CRUD ----------
+
+
+def list_check_items(check_type: Optional[str] = None) -> List[CheckItem]:
+    """점검 항목 목록. check_type 지정 시 해당 유형만."""
+    db = SessionLocal()
+    try:
+        q = db.query(CheckItem).order_by(CheckItem.check_type.asc(), CheckItem.sort_order.asc(), CheckItem.item_key.asc())
+        if check_type:
+            q = q.filter(CheckItem.check_type == check_type)
+        return q.all()
+    finally:
+        db.close()
+
+
+def get_check_item(item_id: int) -> Optional[CheckItem]:
+    """점검 항목 단건 조회."""
+    db = SessionLocal()
+    try:
+        return db.query(CheckItem).filter(CheckItem.id == item_id).first()
+    finally:
+        db.close()
+
+
+def get_enabled_item_keys_for_type(check_type: str) -> Optional[List[str]]:
+    """
+    해당 점검 유형에서 활성화된 item_key 목록.
+    등록된 항목이 하나도 없으면 None (필터 없이 전체 저장).
+    """
+    db = SessionLocal()
+    try:
+        rows = db.query(CheckItem).filter(
+            CheckItem.check_type == check_type,
+            CheckItem.enabled == True
+        ).order_by(CheckItem.sort_order.asc(), CheckItem.item_key.asc()).all()
+        if not rows:
+            return None
+        return [r.item_key for r in rows]
+    finally:
+        db.close()
+
+
+def create_check_item(
+    check_type: str,
+    item_key: str,
+    display_name: Optional[str] = None,
+    enabled: bool = True,
+    sort_order: int = 0,
+) -> CheckItem:
+    """점검 항목 추가. 동일 check_type + item_key 중복 시 예외."""
+    db = SessionLocal()
+    try:
+        existing = db.query(CheckItem).filter(
+            CheckItem.check_type == check_type,
+            CheckItem.item_key == (item_key or "").strip()
+        ).first()
+        if existing:
+            raise ValueError(f"이미 존재하는 항목입니다: {check_type} / {item_key}")
+        item = CheckItem(
+            check_type=(check_type or "").strip(),
+            item_key=(item_key or "").strip(),
+            display_name=(display_name or "").strip() or None,
+            enabled=enabled,
+            sort_order=sort_order,
+        )
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        return item
+    except ValueError:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def update_check_item(
+    item_id: int,
+    display_name: Optional[str] = None,
+    enabled: Optional[bool] = None,
+    sort_order: Optional[int] = None,
+) -> Optional[CheckItem]:
+    """점검 항목 수정."""
+    db = SessionLocal()
+    try:
+        item = db.query(CheckItem).filter(CheckItem.id == item_id).first()
+        if not item:
+            return None
+        if display_name is not None:
+            item.display_name = (display_name or "").strip() or None
+        if enabled is not None:
+            item.enabled = enabled
+        if sort_order is not None:
+            item.sort_order = sort_order
+        db.commit()
+        db.refresh(item)
+        return item
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def delete_check_item(item_id: int) -> bool:
+    """점검 항목 삭제."""
+    db = SessionLocal()
+    try:
+        item = db.query(CheckItem).filter(CheckItem.id == item_id).first()
+        if not item:
+            return False
+        db.delete(item)
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def seed_default_check_items_if_empty():
+    """check_items 테이블이 비어 있으면 점검 유형별 기본 항목 시드."""
+    db = SessionLocal()
+    try:
+        if db.query(CheckItem).first() is not None:
+            return
+        defaults = [
+            ("os", "cpu", "CPU", 0),
+            ("os", "memory", "메모리", 1),
+            ("os", "disk", "디스크", 2),
+            ("os", "network", "네트워크", 3),
+            ("os", "ntp", "NTP", 4),
+            ("mariadb", "installation", "설치 정보", 0),
+            ("mariadb", "service_status", "서비스 상태", 1),
+            ("mariadb", "listener", "리스너", 2),
+            ("mariadb", "os_resources", "OS 리소스", 3),
+            ("mariadb", "db_internal", "DB 내부", 4),
+            ("mariadb", "database", "데이터베이스", 5),
+            ("mariadb", "directory_structure", "디렉터리 구조", 6),
+            ("mariadb", "filesystem_usage", "파일시스템 사용량", 7),
+            ("mariadb", "os_basics", "OS 기본", 8),
+            ("postgresql", "installation", "설치 정보", 0),
+            ("postgresql", "service_status", "서비스 상태", 1),
+            ("postgresql", "listener", "리스너", 2),
+            ("postgresql", "db_parameters", "DB 파라미터", 3),
+            ("postgresql", "tablespace", "테이블스페이스", 4),
+            ("postgresql", "wal", "WAL", 5),
+            ("postgresql", "filesystem_usage", "파일시스템 사용량", 6),
+            ("postgresql", "db_connection", "DB 연결", 7),
+            ("postgresql", "os_resources", "OS 리소스", 8),
+            ("postgresql", "database", "데이터베이스", 9),
+            ("postgresql", "os_basics", "OS 기본", 10),
+            ("postgresql", "directory_structure", "디렉터리 구조", 11),
+            ("cubrid", "installation", "설치 정보", 0),
+            ("cubrid", "service_status", "서비스 상태", 1),
+            ("cubrid", "processes", "프로세스", 2),
+            ("cubrid", "database", "데이터베이스", 3),
+            ("cubrid", "os_resources", "OS 리소스", 4),
+            ("cubrid", "tablespace", "테이블스페이스", 5),
+            ("cubrid", "filesystem", "파일시스템", 6),
+            ("cubrid", "ha", "HA", 7),
+            ("cubrid", "os_basics", "OS 기본", 8),
+            ("was", "installation", "설치 정보", 0),
+            ("was", "service_status", "서비스 상태", 1),
+            ("was", "listener", "리스너", 2),
+            ("was", "os_resources", "OS 리소스", 3),
+            ("was", "applications", "애플리케이션", 4),
+            ("was", "process", "프로세스", 5),
+            ("was", "filesystem_usage", "파일시스템 사용량", 6),
+            ("was", "directory_structure", "디렉터리 구조", 7),
+            ("was", "configuration", "설정", 8),
+            ("was", "logs", "로그", 9),
+            ("was", "script", "스크립트", 10),
+            ("tomcat", "installation", "설치 정보", 0),
+            ("tomcat", "service_status", "서비스 상태", 1),
+            ("tomcat", "listener", "리스너", 2),
+            ("tomcat", "os_resources", "OS 리소스", 3),
+            ("tomcat", "applications", "애플리케이션", 4),
+            ("tomcat", "process", "프로세스", 5),
+            ("tomcat", "filesystem_usage", "파일시스템 사용량", 6),
+            ("tomcat", "directory_structure", "디렉터리 구조", 7),
+            ("tomcat", "configuration", "설정", 8),
+            ("tomcat", "logs", "로그", 9),
+            ("tomcat", "script", "스크립트", 10),
+        ]
+        for check_type, item_key, display_name, sort_order in defaults:
+            db.add(CheckItem(
+                check_type=check_type,
+                item_key=item_key,
+                display_name=display_name,
+                enabled=True,
+                sort_order=sort_order,
+            ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
 
 
 def list_servers_for_inventory() -> List[Dict[str, Any]]:

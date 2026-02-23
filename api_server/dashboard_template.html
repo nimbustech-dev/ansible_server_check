@@ -845,11 +845,12 @@
       <div class="left-panel">
         <div class="charts-row">
           <div style="position: relative;">
-            <div class="mini-title">전체 성공 비율</div>
+            <div class="mini-title">최근 점검 성공 비율</div>
             <div class="chart-container">
               <canvas id="donutChart"></canvas>
               <div class="donut-center-text">총<br><span id="donutTotalText">-</span></div>
             </div>
+            <div id="donutSuccessRate" class="muted" style="text-align: center; margin-top: 6px; font-size: 0.9rem;">성공률 —%</div>
           </div>
           <div>
             <div class="mini-title">유형별 점검 건수</div>
@@ -877,6 +878,13 @@
       </div>
 
       <div class="right-panel">
+        <div class="criteria-card trend-card">
+          <div class="section-title" style="margin-bottom: 10px;">집계 기준 정보</div>
+          <div class="muted" style="font-size: 0.9rem;">
+            <div>점검 기준 일자: <span id="criteriaCheckDate">—</span></div>
+            <div style="margin-top: 4px;">점검 실행 시간: <span id="criteriaCheckTime">—</span></div>
+          </div>
+        </div>
         <div class="trend-card">
           <div class="section-title" style="margin-bottom: 10px;">최근 7일간 점검 건수 추이</div>
           <div class="chart-container" style="height: 160px;">
@@ -1596,15 +1604,39 @@
         }
       }
 
-      // Success ratio (by checks)
+      // 최근 점검 집계: 호스트×유형별 최신 1건만 모은 배열
+      const latestRecords = [];
+      for (const byCat of latestByHostAndCategory.values()) {
+        for (const r of byCat.values()) {
+          latestRecords.push(r);
+        }
+      }
+      const latestRecordCount = latestRecords.length;
+      const latestSuccessCount = latestRecords.filter(r => normalizeStatus(r.status) === 'success').length;
+      const latestNonSuccessCount = latestRecordCount - latestSuccessCount;
+
+      // 기존 호환용 (표시에는 최근 집계만 사용)
       const successCount = results.filter(r => normalizeStatus(r.status) === 'success').length;
       const nonSuccessCount = totalChecks - successCount;
 
-      // Type distribution
+      // 유형별 건수: 최근 점검 기준
       const typeCounts = {};
-      for (const r of results) {
+      for (const r of latestRecords) {
         const t = (r.check_type || 'unknown').toLowerCase();
         typeCounts[t] = (typeCounts[t] || 0) + 1;
+      }
+
+      // 점검 기준 일자·실행 시간 (latestRecords 중 가장 최근 시각)
+      let latestCheckDate = null;
+      let latestCheckTime = null;
+      let maxTime = 0;
+      for (const r of latestRecords) {
+        const t = getRecordTime(r);
+        if (t && t.getTime() > maxTime) {
+          maxTime = t.getTime();
+          latestCheckDate = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+          latestCheckTime = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0') + ' ' + String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+        }
       }
 
       // Trend last 7 days (by checks)
@@ -1648,6 +1680,11 @@
         healthyHostNames,
         successCount,
         nonSuccessCount,
+        latestRecordCount,
+        latestSuccessCount,
+        latestNonSuccessCount,
+        latestCheckDate,
+        latestCheckTime,
         typeCounts,
         dayKeys,
         dayCounts,
@@ -1663,10 +1700,23 @@
       document.getElementById('kpiTodayChecks').textContent = a.todayChecks.toLocaleString('ko-KR');
       document.getElementById('kpiHealthyHosts').textContent = a.healthyHosts.toLocaleString('ko-KR');
       document.getElementById('kpiProblemHosts').textContent = a.problemHosts.toLocaleString('ko-KR');
-      document.getElementById('donutTotalText').textContent = `${a.totalChecks.toLocaleString('ko-KR')}건`;
+      const latestN = a.latestRecordCount != null ? a.latestRecordCount : a.totalChecks;
+      const latestOk = a.latestSuccessCount != null ? a.latestSuccessCount : a.successCount;
+      const latestFail = a.latestNonSuccessCount != null ? a.latestNonSuccessCount : a.nonSuccessCount;
+      document.getElementById('donutTotalText').textContent = `최근 점검\n${latestN.toLocaleString('ko-KR')}건`;
       document.getElementById('updateTime').textContent = `업데이트: ${formatDateTime(new Date())}`;
-      document.getElementById('dataSummary').textContent = `데이터: ${a.totalChecks.toLocaleString('ko-KR')}건 / ${a.hostCount.toLocaleString('ko-KR')}호스트`;
+      document.getElementById('dataSummary').textContent = `최근 점검: 성공 ${latestOk.toLocaleString('ko-KR')}건 / 실패 ${latestFail.toLocaleString('ko-KR')}건 (${a.hostCount.toLocaleString('ko-KR')}호스트, 최근 점검 기준 집계)`;
+      if (document.getElementById('donutSuccessRate')) {
+        const rate = latestN > 0 ? ((latestOk / latestN) * 100).toFixed(1) : '—';
+        document.getElementById('donutSuccessRate').textContent = `성공률 ${rate}%`;
+      }
       document.getElementById('kpiHostsSub').textContent = `호스트×유형 최신 상태 기준`;
+      if (document.getElementById('criteriaCheckDate')) {
+        document.getElementById('criteriaCheckDate').textContent = a.latestCheckDate || '—';
+      }
+      if (document.getElementById('criteriaCheckTime')) {
+        document.getElementById('criteriaCheckTime').textContent = a.latestCheckTime || '—';
+      }
       if (a.problemCountByCategory) {
         const osN = a.problemCountByCategory.os || 0;
         const dbN = a.problemCountByCategory.db || 0;
@@ -1715,7 +1765,7 @@
         }
       };
 
-      // Donut (success ratio)
+      // Donut (최근 점검 기준 성공/실패)
       donutChart = destroyChart(donutChart);
       const donutCtx = document.getElementById('donutChart').getContext('2d');
       donutChart = new Chart(donutCtx, {
@@ -1723,7 +1773,7 @@
         data: {
           labels: ['성공', '경고/에러'],
           datasets: [{
-            data: [a.successCount, a.nonSuccessCount],
+            data: [a.latestSuccessCount || 0, a.latestNonSuccessCount || 0],
             backgroundColor: ['rgba(16,185,129,0.95)', 'rgba(239,68,68,0.95)'],
             borderColor: ['rgba(16,185,129,0.25)', 'rgba(239,68,68,0.25)'],
             borderWidth: 2,
