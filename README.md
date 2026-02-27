@@ -204,7 +204,6 @@ ansible-playbook -i hosts.ini tomcat_check/tomcat_check.yml
 
 ### 점검 실행
 
-- `run_navercloud_checks.sh`: `hosts.ini` 기반으로 OS→MariaDB→PostgreSQL→Tomcat 플레이북을 순차 실행합니다(수동 점검용).
 - `auto_check_navercloud.sh`: Cron 실행을 전제로 한 자동 점검 스크립트입니다. 날짜별 로그(`logs/navercloud_check_YYYYMMDD.log`)를 남기고 성공/실패 요약을 출력합니다.
 - `run_checks_from_api.sh`: API 서버의 동적 inventory(`/api/inventory`)를 가져와 `.inventory_from_api.json`을 만든 뒤, 그 inventory로 플레이북을 실행합니다. (`INVENTORY_API_KEY` 필요)
 
@@ -222,15 +221,9 @@ ansible-playbook -i hosts.ini tomcat_check/tomcat_check.yml
 
 - `fix_postgresql_sequence.sh`: PostgreSQL에서 `check_results.id` 시퀀스가 꼬여 insert가 실패할 때(중복 id 등) 시퀀스를 재생성/재연결/재설정합니다.
 
-### 자동 업데이트(운영 보조)
-
-- `auto_update_smart.sh`
-- `auto_update_and_restart.sh`
-
 ### 로그/상태 파일 (실행 시 생성, .gitignore 대상)
 
 - `api_server.log`: API 서버 로그
-- `api_auto_update.log`: 자동 업데이트 로그
 - `api_server.pid`: API 서버 PID 파일
 
 ---
