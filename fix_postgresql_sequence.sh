@@ -9,12 +9,20 @@ SERVER_HOST="27.96.129.114"
 SERVER_PORT="4433"
 SSH_KEY="$HOME/.ssh/nimso2026.pem"
 DB_USER="ansible_user"
-DB_PASSWORD="nimbus1234"
 DB_NAME="ansible_checks"
 
 # SSH를 통해 PostgreSQL에 접속하여 시퀀스 생성
 ssh -i "$SSH_KEY" -p "$SERVER_PORT" root@"$SERVER_HOST" bash << 'REMOTE_SCRIPT'
-export PGPASSWORD='nimbus1234'
+# 가능한 경우, 배포 서버의 api_server/.env에서 DATABASE_URL을 읽어 비밀번호를 추출합니다.
+# (repo에 비밀번호를 하드코딩하지 않기 위함)
+ENV_FILE="/opt/ansible-monitoring/api_server/.env"
+if [ -f "$ENV_FILE" ]; then
+  DB_URL=$(grep -E '^DATABASE_URL=' "$ENV_FILE" | head -n 1 | cut -d= -f2- | tr -d '\r' | sed 's/^"//;s/"$//')
+  PASS=$(echo "$DB_URL" | sed -n 's#^postgresql://[^:]*:\([^@]*\)@.*#\1#p')
+  if [ -n "$PASS" ]; then
+    export PGPASSWORD="$PASS"
+  fi
+fi
 DB_USER="ansible_user"
 DB_NAME="ansible_checks"
 

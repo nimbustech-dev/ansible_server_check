@@ -39,7 +39,13 @@ fi
 # 연결 테스트
 echo ""
 echo "🔍 데이터베이스 연결 테스트 중..."
-if PGPASSWORD=nimbus1234 psql -h localhost -U ansible_user -d ansible_checks -c "SELECT 1;" > /dev/null 2>&1; then
+PG_PASSWORD="${PGPASSWORD:-${POSTGRESQL_PASSWORD:-}}"
+if [ -n "$PG_PASSWORD" ]; then
+    PGPASSWORD="$PG_PASSWORD" psql -h localhost -U ansible_user -d ansible_checks -c "SELECT 1;" > /dev/null 2>&1
+else
+    psql -h localhost -U ansible_user -d ansible_checks -c "SELECT 1;" > /dev/null 2>&1
+fi
+if [ $? -eq 0 ]; then
     echo "✅ 데이터베이스 연결 성공!"
     echo ""
     echo "📊 데이터베이스 정보:"
