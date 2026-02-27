@@ -196,11 +196,31 @@ ansible-playbook -i hosts.ini tomcat_check/tomcat_check.yml
 
 ## 운영/편의 스크립트(현재 존재하는 파일 기준)
 
+이 프로젝트는 운영/배포/점검을 쉘 스크립트로 묶어두었습니다. **서버의 비밀값(`api_server/.env`, DB 비밀번호, INVENTORY_API_KEY 등)은 Git에 올리지 않고** 서버에 별도로 설정하는 것을 전제로 합니다.
+
+### 배포
+
+- `deploy_current_branch.sh`: 현재 브랜치를 배포 서버(`/opt/ansible-monitoring`)에 rsync로 업로드하고 `ansible-api-server`를 재시작한 뒤 `/api/health`로 확인합니다.
+
+### 점검 실행
+
+- `run_navercloud_checks.sh`: `hosts.ini` 기반으로 OS→MariaDB→PostgreSQL→Tomcat 플레이북을 순차 실행합니다(수동 점검용).
+- `auto_check_navercloud.sh`: Cron 실행을 전제로 한 자동 점검 스크립트입니다. 날짜별 로그(`logs/navercloud_check_YYYYMMDD.log`)를 남기고 성공/실패 요약을 출력합니다.
+- `run_checks_from_api.sh`: API 서버의 동적 inventory(`/api/inventory`)를 가져와 `.inventory_from_api.json`을 만든 뒤, 그 inventory로 플레이북을 실행합니다. (`INVENTORY_API_KEY` 필요)
+
+### 자동 점검(cron) 설정
+
+- `setup_server_auto_check.sh`: 배포 서버에 Ansible 설치 및 **crontab 등록**(기본: 매일 07:00에 `auto_check_navercloud.sh` 실행)을 수행합니다.
+
 ### API/DB 시작·종료
 
 - `start_api_server.sh` / `stop_api_server.sh`
 - `start_db_server.sh` / `stop_db_server.sh`
 - `restart_db_server.sh`
+
+### DB(문제 해결용)
+
+- `fix_postgresql_sequence.sh`: PostgreSQL에서 `check_results.id` 시퀀스가 꼬여 insert가 실패할 때(중복 id 등) 시퀀스를 재생성/재연결/재설정합니다.
 
 ### 자동 업데이트(운영 보조)
 

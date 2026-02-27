@@ -27,6 +27,7 @@ logs/
 # API Server
 api_server.log
 api_server.pid
+api_server/.env
 
 # Inventory files (실제 서버 정보 포함)
 naver_cloud_inventory

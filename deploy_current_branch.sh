@@ -47,6 +47,7 @@ rsync -avz -e "ssh -i $SSH_KEY -p $SERVER_PORT" \
     --exclude='__pycache__' \
     --exclude='*.pyc' \
     --exclude='.git' \
+    --exclude='.env' \
     --exclude='check_results.db' \
     --exclude='*.log' \
     ./api_server/ "$SERVER_USER@$SERVER_HOST:$REMOTE_DIR/api_server/"

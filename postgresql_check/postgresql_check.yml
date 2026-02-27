@@ -35,8 +35,10 @@
       url: "{{ api_server.url | default('http://192.168.0.18:8000/api/checks') }}"
       timeout: "{{ api_server.timeout | default(30) }}"
       retry_count: "{{ api_server.retry_count | default(3) }}"
-    # PostgreSQL 접속 비밀번호 (환경 변수 또는 기본값)
-    postgresql_password: "{{ lookup('env', 'POSTGRESQL_PASSWORD') | default('nimbus1234') }}"
+    # PostgreSQL 접속 비밀번호 (환경 변수)
+    # - 운영에서는 POSTGRESQL_PASSWORD(또는 PGPASSWORD)를 설정하거나, .pgpass를 사용하세요.
+    # - 기본값을 코드에 하드코딩하지 않습니다(비밀 유출 방지).
+    postgresql_password: "{{ lookup('env', 'POSTGRESQL_PASSWORD') | default(lookup('env', 'PGPASSWORD') | default('')) }}"
     # PostgreSQL 타임아웃 설정
     postgresql_connect_timeout: 5  # psql 연결 타임아웃 (초)
     postgresql_task_timeout: 120    # Ansible task 타임아웃 (초) - SSH 자체점검 시 psql 다중 시도로 시간 소요 (일부 태스크는 30초로 개별 설정)
